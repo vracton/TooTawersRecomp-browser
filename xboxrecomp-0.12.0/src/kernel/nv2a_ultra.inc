@@ -44,7 +44,7 @@ static UltraFile *g_uf;
 static int g_uin, g_ui_tried, g_uicap;
 #define UMAP_N 16384
 static struct { uint32_t hash; int idx; uint8_t used; } g_umap[UMAP_N];   /* (by the texture's content hash, so each is paired once) */
-static int g_ultra_on = -1;
+static const int g_ultra_on = 0;
 static long g_ultra_gfx_rev = -1;
 static int g_ultra_log = -1;
 
@@ -297,16 +297,6 @@ static void ultra_adds(int all)
  * decoded again, to be paired) */
 static int ultra_on(void)
 {
-    if (g_ultra_gfx_rev != xbox_gfx_rev) {
-        int on;
-        g_ultra_gfx_rev = xbox_gfx_rev;
-        on = xbox_GfxGet(GFX_ULTRA) == 1;
-        if (g_ultra_on >= 0 && on != g_ultra_on) xbox_tex_rev++;
-        if (on != g_ultra_on) { fprintf(stderr, "  [ULTRA] Ultra textures %s\n", on ? "on" : "off"); fflush(stderr); }
-        g_ultra_on = on;
-        if (g_ultra_log < 0) g_ultra_log = getenv("RECOMP_ULTRA_LOG") != NULL;
-    }
-    if (g_ultra_on == 1 && ultra_index()) { ultra_adds(0); ultra_build_poll(); return 1; }
     return 0;
 }
 

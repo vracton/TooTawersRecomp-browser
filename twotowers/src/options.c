@@ -70,7 +70,6 @@ static const Row s_display[] = {
     { "Resolution:", GFX_SCALE, K_CYCLE, { "1x", "2x", "3x", "4x", "2160p", "5x", "6x", "7x", "8x", "9x", "10x", "11x", "12x" } },
     { "Anisotropic:", GFX_ANISO, K_SLIDER, { 0 } },
     { "Mipmaps:", GFX_MIPS, K_COLS, { "Off", "On" } },
-    { "Ultra Textures:", GFX_ULTRA, K_COLS, { "Off", "On" } },
     { "Wide Cutscenes:", GFX_WIDE_SCENES, K_COLS, { "Off", "On" } },
     { "Anti-aliasing:", GFX_AA, K_CYCLE, { "Off", "FXAA", "MSAA 2x", "MSAA 4x", "MSAA 8x", "MSAA 4x+FXAA", "MSAA 8x+FXAA" } },
     { "VSync:", GFX_VSYNC, K_COLS, { "Off", "On" } },
@@ -280,23 +279,8 @@ static void coop_devices_save(void)
 /* each frame (twotowers_manual.c, the controller read): two players' input while a co-op game wants a human player 2 */
 void tt_coop_input_sync(void)
 {
-    int two;
-    coop_devices_load();
-    { extern int tt_coop_nplayers(void); int np = tt_coop_active() ? tt_coop_nplayers() : 2; xbox_input_players = np;   /* (2.1) three or four players: each his own device */
-      two = tt_coop_active() && (!tt_coop_setting(CO_BOT) || np > 2) && !getenv("TT_COOP_PAD2SCRIPT"); }   /* (P2 Bot Off: a person plays player 2) */
-    { extern int tt_net_on(void); if (tt_net_on()) { xbox_input_players = 1; two = 0; } }   /* (2.1, online: one player at each machine -- his pad and keys are player 1's port here, net.c sends them) */
-    if (two != xbox_input_two_players) {
-        xbox_input_two_players = two;
-        tt_dbg("[COOPDEV] input as %s (devices: player 1 %d, player 2 %d)\n", two ? "two players" : "one player", xbox_input_dev_choice[0], xbox_input_dev_choice[1]);
-    }
-    if (two && getenv("TT_COOP_P1GUARD")) {   /* (2.0.1: off, as in 2.0.0 -- the devices as chosen) */   /* (2.0.1) player 1 left with no device (the others' choices took them all, a saved setup):
-        * the keyboard back to him -- or no one could answer the menus or the pause */
-        extern int xbox_InputPlayerHasDevice(int port); static DWORD lt;
-        if (GetTickCount() - lt > 1000u) { int q; lt = GetTickCount();
-            if (xbox_input_dev_choice[0] < 0 && !xbox_InputPlayerHasDevice(0))
-                for (q = 1; q < 4; q++) if (xbox_input_dev_choice[q] == 0) { xbox_input_dev_choice[q] = -1; coop_devices_save();
-                    tt_dbg("[COOPDEV] player 1 had no device: the keyboard back to him (player %d's choice now Auto)\n", q + 1); break; } }
-    }
+    xbox_input_players = 1;
+    xbox_input_two_players = 0;
 }
 /* a player's device in words: what is chosen, and (automatic) what that is now */
 static void dev_text(int pl, char *out, int n)
@@ -346,17 +330,21 @@ static void dev_change(int pl, int d)
     coop_devices_save();
 }
 
-static const char *s_hub[4] = { "General Options", "Display Options", "Controls", "Co-op Options" };   /* (1.9.7: Gameplay Options gone -- Impossible is on General Options' Difficulty and the New Game's) */
+static const char *const s_hub[] = { "General Options", "Display Options", "Controls" };
 /* Co-op Options: on the front end's Options, and the pause menu's only in a co-op game */
 extern int tt_coop_active(void);
 /* (2.1) online (connected, or in an online game): General Options, Controls and Online Options -- no Display Options (each
  * machine's own, set before), no Co-op Options (bots, teleport: not online's) */
 static const char *s_hub_net[3] = { "General Options", "Controls", "Online Options" };
 static int hub_net(void) { extern int tt_net_on(void); return tt_net_on(); }
-static int hub_n(void) { uint32_t fe = G32(0x4AD050u); if (hub_net()) return 3; return fe == 6 || fe == 8 ? (tt_coop_active() ? 4 : 3) : 4; }
-static int hub_page(int i) { if (hub_net()) return i == 0 ? PG_GENERAL : i == 1 ? PG_CONTROLS : PG_ONLINE; return i == 0 ? PG_GENERAL : i == 1 ? PG_DISPLAY : i == 2 ? PG_CONTROLS : PG_COOP; }
+static int hub_n(void) {
+    return (int)(sizeof s_hub / sizeof s_hub[0]);
+}
+static int hub_page(int i) {
+    return i == 0 ? PG_GENERAL : i == 1 ? PG_DISPLAY : PG_CONTROLS;
+}
 static int s_online_hub;   /* (Online Options opened from the hub: Back goes there) */
-static const char *hub_label(int i) { return hub_net() ? s_hub_net[i < 3 ? i : 2] : s_hub[i]; }
+static const char *hub_label(int i) { return s_hub[i]; }
 /* (1.9.7) Options > Gameplay Options: Impossible (the solo game's difficulty past Expert: any enemy's second blow fells
  * you; chosen on the New Game's difficulty screen too, right of Expert) */
 static const Row s_game_page[] = {
@@ -899,9 +887,6 @@ int tt_opt_draw(uint32_t obj)
      * it, not time -- a new full-screen resolution held the picture for
      * longer than 400 ms and the page went back to the first one) */
     if (!s_drawn || s_frames - s_drawn_frame > 3) { s_page = PG_HUB; s_hub_sel = 0; s_exit_frames = 0; s_on_back = 0; }
-    if (tt_net_screen_req) { tt_net_screen_req = 0; s_netmenu = 1; s_vsmenu = 0; s_page = PG_COOPMENU; s_sel = 0; s_top = 0; tt_dbg("[NETMENU] the Online menu opened\n"); { extern void xbox_KeyScriptArm(void); xbox_KeyScriptArm(); } { extern void tt_net_heroes_check(void); tt_net_heroes_check(); } }
-    if (tt_coop_screen_req) { tt_coop_screen_req = 0; s_netmenu = 0; s_vsmenu = 0; s_page = PG_COOPMENU; s_sel = 0; s_top = 0; tt_dbg("[COOPMENU] the Co-op menu opened\n"); }
-    if (tt_vs_screen_req) { tt_vs_screen_req = 0; s_netmenu = 0; s_vsmenu = 1; s_page = PG_COOPMENU; s_sel = 0; s_top = 0; vs_fix(); tt_dbg("[VSMENU] the Versus menu opened\n"); }
     s_drawn = GetTickCount() | 1;
     s_drawn_frame = s_frames;
     if (getenv("TT_NOOPTPAGES")) s_page = PG_GENERAL;

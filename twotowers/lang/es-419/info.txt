@@ -1,2 +1,0 @@
-name=Español (Latinoamérica)
-rtl=0

@@ -1,2 +1,0 @@
-name=Español (España)
-rtl=0

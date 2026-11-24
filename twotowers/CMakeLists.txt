@@ -89,19 +89,10 @@ set(GAME_SOURCES
     src/main.c
     src/recomp_manual.c
     src/twotowers_manual.c
-    src/e3hud.c
     src/heroes.c
-    src/lang.c
-    src/lang_ultra.cpp
-    tools/ultra_textures/bc7enc.cpp
-    tools/ultra_textures/bc7decomp.cpp
-    tools/ultra_textures/lodepng.cpp
+    src/retail_hooks.c
     src/menus.c
     src/options.c
-    src/versus.c
-    src/achieve.c
-    src/credits_music.c
-    src/net.c
     # Add game-specific sources here, e.g.:
     # src/asset_loader.c
     # src/custom_renderer.c
@@ -121,9 +112,8 @@ add_executable(${PROJECT_NAME} WIN32
     ${RECOMP_GEN_SOURCES}
 )
 # (1.9.5) the game code's sin/cos/tan: our own (src/rc_fastmath.h), four
-# times as fast as the C library's x87 versions and as accurate (2.1: and all
-# of its math -- the same results on every machine, for online play)
-set_property(SOURCE ${RECOMP_GEN_SOURCES} src/heroes.c src/twotowers_manual.c src/versus.c APPEND PROPERTY COMPILE_OPTIONS
+# times as fast as the C library's x87 versions with the same accuracy.
+set_property(SOURCE ${RECOMP_GEN_SOURCES} src/heroes.c src/twotowers_manual.c APPEND PROPERTY COMPILE_OPTIONS
     "-include" "${CMAKE_CURRENT_SOURCE_DIR}/src/rc_fastmath.h")
 
 # Link against the xboxrecomp umbrella target (all 6 runtime libraries)
@@ -148,7 +138,6 @@ if(WIN32)
         # function's symbol, i.e. to the guest function that faulted.
         dbghelp
         bcrypt
-        ws2_32
     )
 else()
     # Linux: SDL2 (window, OpenGL context, sound, controllers); OpenGL itself
@@ -216,8 +205,7 @@ endif()
 # )
 
 set_target_properties(${PROJECT_NAME} PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
-# (1.9.2: lang_ultra.cpp is C++) the C++ runtime inside, as twotowers-setup's:
-# the build's libstdc++ is newer than older systems' (Ubuntu 18.04)
+# Use the bundled C++ runtime on older Linux systems.
 if(UNIX AND NOT APPLE)
     target_link_options(${PROJECT_NAME} PRIVATE -static-libstdc++ -static-libgcc)
 endif()
@@ -232,9 +220,7 @@ endif()
 # First-launch setup / launcher: installs the game files from your ISO or
 # points at an extracted folder, then starts twotowers_recomp.exe.
 if(WIN32)
-# (with the Ultra textures builder: tools/ultra_textures/ultra_build.h)
-set(TT_ULTRA_BUILD_SRC tools/ultra_textures/bc7enc.cpp tools/ultra_textures/bc7decomp.cpp tools/ultra_textures/lodepng.cpp)
-add_executable(twotowers_launcher WIN32 src/setup_launcher.cpp ${TT_ULTRA_BUILD_SRC} ${CMAKE_CURRENT_BINARY_DIR}/launcher.rc)
+add_executable(twotowers_launcher WIN32 src/setup_launcher.cpp ${CMAKE_CURRENT_BINARY_DIR}/launcher.rc)
 set_target_properties(twotowers_launcher PROPERTIES CXX_STANDARD 17
     OUTPUT_NAME "The Two Towers Recompiled")
 target_link_libraries(twotowers_launcher PRIVATE comctl32 comdlg32 shell32 ole32 bcrypt)
@@ -244,7 +230,7 @@ endif()
 else()
 # Linux: twotowers-setup (disc check/extraction, a few ini settings), run by
 # TwoTowers.sh. Statically linked C++ runtime so it runs on older systems.
-add_executable(twotowers-setup src/linux_setup.cpp tools/ultra_textures/bc7enc.cpp tools/ultra_textures/bc7decomp.cpp tools/ultra_textures/lodepng.cpp)
+add_executable(twotowers-setup src/linux_setup.cpp)
 find_package(Threads REQUIRED)
 target_link_libraries(twotowers-setup PRIVATE Threads::Threads)
 set_target_properties(twotowers-setup PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)

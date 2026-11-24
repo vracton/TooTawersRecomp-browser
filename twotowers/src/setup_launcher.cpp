@@ -29,7 +29,6 @@
 #include <vector>
 
 namespace fs = std::filesystem;
-#include "../tools/ultra_textures/ultra_build.h"
 
 static const char *kXbeSha256 = "ae2d1b5304b3e9572339b693a6a45ad0869bdaeec89aae374b5c14feebbb8d30";
 static const wchar_t *kTitle = L"The Two Towers Recompiled";
@@ -156,80 +155,9 @@ static void iniSet(const wchar_t *sec, const wchar_t *key, const std::wstring &v
     WritePrivateProfileStringW(sec, key, v.c_str(), iniPath().c_str());
 }
 
-// ───────────────────────────── Language ─────────────────────────────
-// [Language] language = <code>: the pack in lang/<code>/ (made by
-// tools/lang/build_lang.py). text.txt holds "L:<English>\t<translation>"
-// for the launcher's own words; anything missing stays English.
-
-#include <map>
-static std::map<std::wstring, std::wstring> g_tr;
-static bool g_rtl;
-static std::wstring unesc(const std::wstring &v)
-{
-    std::wstring o;
-    for (size_t i = 0; i < v.size(); i++) {
-        if (v[i] == L'\\' && i + 1 < v.size()) {
-            wchar_t c = v[++i];
-            o += c == L'n' ? L'\n' : c == L't' ? L'\t' : c == L'r' ? L'\r' : c;
-        } else o += v[i];
-    }
-    return o;
-}
-static std::wstring langCode() { return iniGet(L"Language", L"language", L"en"); }
-static void langLoad()
-{
-    std::wstring code = langCode();
-    if (code.empty() || code == L"en") return;
-    fs::path d = exeDir() / L"lang" / code;
-    std::ifstream in(d / L"text.txt", std::ios::binary);
-    std::string ln;
-    while (std::getline(in, ln)) {
-        if (!ln.empty() && ln.back() == '\r') ln.pop_back();
-        if (ln.compare(0, 2, "L:") != 0) continue;
-        size_t t = ln.find('\t');
-        if (t == std::string::npos) continue;
-        g_tr[unesc(W(ln.substr(2, t - 2)))] = unesc(W(ln.substr(t + 1)));
-    }
-    std::ifstream inf(d / L"info.txt", std::ios::binary);
-    while (std::getline(inf, ln)) if (ln.compare(0, 5, "rtl=1") == 0) g_rtl = true;
-}
-static const wchar_t *T(const wchar_t *en)
-{
-    if (!en || g_tr.empty()) return en;
-    auto it = g_tr.find(en);
-    return it == g_tr.end() ? en : it->second.c_str();
-}
-static std::string T8(const std::string &en)
-{
-    if (g_tr.empty()) return en;
-    std::wstring w = W(en);
-    auto it = g_tr.find(w);
-    if (it == g_tr.end()) return en;
-    int n = WideCharToMultiByte(CP_UTF8, 0, it->second.c_str(), (int)it->second.size(), nullptr, 0, nullptr, nullptr);
-    std::string o(n, 0);
-    WideCharToMultiByte(CP_UTF8, 0, it->second.c_str(), (int)it->second.size(), &o[0], n, nullptr, nullptr);
-    return o;
-}
-struct LangItem { std::wstring code, name; };
-static std::vector<LangItem> langList()
-{
-    std::vector<LangItem> v{{L"en", L"English"}};
-    std::error_code ec;
-    std::vector<LangItem> more;
-    for (auto &e : fs::directory_iterator(exeDir() / L"lang", ec)) {
-        if (!e.is_directory()) continue;
-        std::ifstream inf(e.path() / L"info.txt", std::ios::binary);
-        std::string ln, name;
-        while (std::getline(inf, ln)) {
-            if (!ln.empty() && ln.back() == '\r') ln.pop_back();
-            if (ln.compare(0, 5, "name=") == 0) name = ln.substr(5);
-        }
-        if (!name.empty()) more.push_back({e.path().filename().wstring(), W(name)});
-    }
-    std::sort(more.begin(), more.end(), [](auto &a, auto &b) { return a.code < b.code; });
-    v.insert(v.end(), more.begin(), more.end());
-    return v;
-}
+/* English labels shared by the current launcher controls. */
+static const wchar_t *T(const wchar_t *text) { return text; }
+static const std::string &T8(const std::string &text) { return text; }
 
 static bool xbeOk(const fs::path &dir, std::string *why)
 {
@@ -255,7 +183,7 @@ static fs::path currentGameDir()
 
 // ───────────────────────────── UI ─────────────────────────────
 
-enum { ID_ISO = 100, ID_DIR, ID_RES, ID_MODE, ID_INTERNAL, ID_VSYNC, ID_WIDE, ID_LOG, ID_PLAY, ID_OPEN, ID_PROGRESS, ID_STATUS, ID_GFX, ID_CTL, ID_LANG };
+enum { ID_ISO = 100, ID_DIR, ID_RES, ID_MODE, ID_INTERNAL, ID_VSYNC, ID_WIDE, ID_LOG, ID_PLAY, ID_OPEN, ID_PROGRESS, ID_STATUS, ID_GFX, ID_CTL };
 static const UINT WM_STATUS = WM_APP + 1, WM_PROGRESS = WM_APP + 2, WM_DONE = WM_APP + 3;
 
 static HWND g_hwnd, g_status, g_progress, g_res, g_mode, g_internal, g_vsync, g_wide, g_log, g_play;
@@ -326,45 +254,6 @@ static void extractIso(fs::path iso)
     }
     iniSet(L"Paths", L"game_dir", L"");
     PostMessageW(g_hwnd, WM_DONE, 1, 0);
-}
-
-/* Ultra textures: the GLOS69 pack (downloaded separately) made into the
- * files the game reads (tools/ultra_textures/ultra_build.h), once. */
-static bool g_ultraOnly;   // --build-ultra: started by the game; closes when done
-/* the builder's words (ultra_build.h): its phrases, each translated */
-static std::string trWhat(std::string w)
-{
-    static const char *pre[] = {"Converting ", "Softening the edges of ", "Fixing the transparency of ", "Ultra textures ready: "};
-    static const char *whole[] = {"Writing the index", "The GLOS69 texture pack is not in the game's folder.",
-                                  "Could not write textures_ultra/index.bin."};
-    for (const char *x : whole) if (w == x) return T8(x);
-    for (const char *x : pre)
-        if (w.compare(0, strlen(x), x) == 0) { w = T8(x) + w.substr(strlen(x)); break; }
-    for (const char *x : {" pictures", " could not be made"}) {
-        size_t at = w.find(x);
-        if (at != std::string::npos) w = w.substr(0, at) + T8(x) + w.substr(at + strlen(x));
-    }
-    return w;
-}
-
-static void ultraBuild(bool thenPlay)
-{
-    if (g_busy) return;
-    g_busy = true;
-    EnableWindow(g_play, FALSE);
-    setStatus(T(L"Building the Ultra textures from the GLOS69 pack (once; a few minutes)..."));
-    std::thread([thenPlay] {
-        std::string err;
-        int last = -1;
-        int r = ultra_build::build(exeDir(), [&](double f, const std::string &what) {
-            int p = (int)(f * 1000);
-            if (p != last) { last = p; PostMessageW(g_hwnd, WM_PROGRESS, (WPARAM)p, 0); }
-            static int n;
-            if ((n++ & 7) == 0 || f >= 1.0) postStatus(T8("Ultra textures (once): ") + trWhat(what));
-        }, err);
-        if (r) postStatus(T8("Ultra textures: ") + trWhat(err));
-        PostMessageW(g_hwnd, WM_DONE, r == 0, thenPlay ? 2 : 1);
-    }).detach();
 }
 
 static void pickIso()
@@ -495,8 +384,6 @@ static void gfxBuildOptions()
         {{L"As made (4:3)", L"0"}, {L"Fill the width (black bands cut off)", L"1"}}});
     g_gfx.push_back({L"Widescreen cutscenes", L"wide_scenes", L"0",
         {{L"Off (4:3, side bars)", L"0"}, {L"On (the sky's edges can show)", L"1"}}});
-    g_gfx.push_back({L"Ultra textures", L"ultra_textures", L"0",
-        {{L"Off", L"0"}, {L"On (sharper menus and HUD; everything with the GLOS69 pack)", L"1"}}});
     g_gfx.push_back({L"Internal resolution", L"render_scale", L"1",
         {{L"1x  (640 x 480, original)", L"1"}, {L"2x  (1280 x 960)", L"2"}, {L"3x  (1920 x 1440)", L"3"}, {L"4x  (2560 x 1920)", L"4"}, {L"4.5x (2160 lines: 3840 x 2160 at 16:9)", L"4.5"}, {L"5x  (3200 x 2400)", L"5"}, {L"6x  (3840 x 2880)", L"6"}, {L"7x  (4480 x 3360)", L"7"}, {L"8x  (5120 x 3840)", L"8"},
          {L"9x  (5760 x 4320)", L"9"}, {L"10x (6400 x 4800)", L"10"}, {L"11x (7040 x 5280)", L"11"}, {L"12x (7680 x 5760)", L"12"}}});
@@ -536,17 +423,6 @@ static void gfxBuildOptions()
     g_gfx.push_back({L"Mouse steering (movement)", L"mouse_steer", L"0",
         {{L"Off", L"0"}, {L"On (hold W: he runs the way the mouse pushes; Walk walks)", L"1"}}});
     g_gfx.back().sec = L"Input";
-    g_gfx.push_back({L"Mod: ECTS 2002 HUD (experimental)", L"e3_hud", L"0",
-        {{L"Off (retail HUD)", L"0"}, {L"On (ECTS 2002 demo HUD)", L"1"}}});
-    g_gfx.back().sec = L"Mods";
-    g_gfx.push_back({L"Mod: Orange health pickups (shown in pre-release & making-of videos)", L"e3_pickups", L"0",
-        {{L"Off (green, as retail)", L"0"}, {L"On (orange health pickups)", L"1"}}});
-    g_gfx.back().sec = L"Mods";
-    g_gfx.push_back({L"Mod: 13 extra heroes", L"extra_heroes", L"3",
-        {{L"Off (four heroes, as retail)", L"0"}, {L"Unlock through Isildur and Orthanc victories (progress counts)", L"1"},
-         {L"On, unlocked for testing (save not changed)", L"2"},
-         {L"Extras unlocked from the start (progress counts)", L"3"}}});
-    g_gfx.back().sec = L"Mods";
     for (auto &o : g_gfx) {
         o.label = T(o.label);
         for (auto &c : o.choices) c.label = T(c.label);
@@ -592,15 +468,8 @@ static LRESULT CALLBACK gfxProc(HWND h, UINT m, WPARAM wp, LPARAM lp)
     case WM_COMMAND:
         switch (LOWORD(wp)) {
         case ID_GFX_OK: {
-            std::wstring was = iniGet(L"Display", L"ultra_textures", L"0");
             gfxSave();
             DestroyWindow(h);
-            if (was != L"1" && iniGet(L"Display", L"ultra_textures", L"0") == L"1" && ultra_build::find_pack(exeDir()).empty())
-                MessageBoxW(g_hwnd, (std::wstring(T(L"Ultra textures are on: the menus, level select and HUD are sharper.\n\n")) +
-                                     T(L"For every texture, download the GameCube high-resolution texture pack (GLOS69) ") +
-                                     T(L"from its author and put its GLOS69 folder here:\n\n") + exeDir().wstring() +
-                                     T(L"\n\nThe launcher makes it ready the next time you press Play (once; a few minutes).")).c_str(),
-                            kTitle, MB_ICONINFORMATION);
             return 0;
         }
         case IDCANCEL:
@@ -671,7 +540,7 @@ static void graphicsSettings()
     g_gfxWnd = CreateWindowExW(WS_EX_DLGMODALFRAME, L"TwoTowersGfx", T(L"Graphics settings"), style,
                                wx, wy, ww, wh, g_hwnd, nullptr, inst, nullptr);
     auto child = [&](const wchar_t *cls, const wchar_t *t, DWORD st, int id, int x, int y, int w, int hh) {
-        HWND c = CreateWindowExW(g_rtl ? WS_EX_LAYOUTRTL : 0, cls, T(t), WS_CHILD | WS_VISIBLE | st, x, y, w, hh, g_gfxWnd, (HMENU)(INT_PTR)id, inst, nullptr);
+        HWND c = CreateWindowExW(0, cls, T(t), WS_CHILD | WS_VISIBLE | st, x, y, w, hh, g_gfxWnd, (HMENU)(INT_PTR)id, inst, nullptr);
         SendMessageW(c, WM_SETFONT, (WPARAM)g_font, TRUE);
         return c;
     };
@@ -689,12 +558,8 @@ static void graphicsSettings()
         y += rh + gap;
     }
     y = M + std::max(colH[0], colH[1]);
-    {   /* (two sentences, each translated: lang) */
-        static std::wstring note;
-        note = std::wstring(T(L"All but the mods can also be changed while playing: press F10 (or hold Back and press Start). ")) +
-               T(L"The mods are set here and take effect when the game starts.");
-        child(L"STATIC", note.c_str(), SS_LEFT, -1, M, y, cw - 2 * M, noteH);
-    }
+    child(L"STATIC", L"In game, press F10 or hold Back and press Start to open settings.",
+          SS_LEFT, -1, M, y, cw - 2 * M, noteH);
     y += noteH + gap;
     int bw = fh * 6;
     child(L"BUTTON", L"Defaults", WS_TABSTOP, ID_GFX_DEFAULTS, M, y, bw, ch);
@@ -916,7 +781,7 @@ static void controlsSettings()
       wx = std::max<int>(wa.left, std::min<int>(wx, wa.right - ww)); wy = std::max<int>(wa.top, std::min<int>(wy, wa.bottom - wh)); }
     g_ctlWnd = CreateWindowExW(WS_EX_DLGMODALFRAME, L"TwoTowersCtl", T(L"Controls"), style, wx, wy, ww, wh, g_hwnd, nullptr, inst, nullptr);
     auto child = [&](const wchar_t *cls, const wchar_t *t, DWORD st, int id, int x, int y, int w, int hh) {
-        HWND c = CreateWindowExW(g_rtl ? WS_EX_LAYOUTRTL : 0, cls, T(t), WS_CHILD | WS_VISIBLE | st, x, y, w, hh, g_ctlWnd, (HMENU)(INT_PTR)id, inst, nullptr);
+        HWND c = CreateWindowExW(0, cls, T(t), WS_CHILD | WS_VISIBLE | st, x, y, w, hh, g_ctlWnd, (HMENU)(INT_PTR)id, inst, nullptr);
         SendMessageW(c, WM_SETFONT, (WPARAM)g_font, TRUE);
         return c;
     };
@@ -986,12 +851,6 @@ static void controlsSettings()
 static void play()
 {
     saveSettings();
-    static bool built;   /* (built once this run: play, never build again -- 1.9.2) */
-    if (!g_busy && !built && iniGet(L"Display", L"ultra_textures", L"0") == L"1" && ultra_build::needed(exeDir())) {
-        built = true;
-        ultraBuild(true);
-        return;
-    }
     fs::path exe = exeDir() / L"twotowers_recomp.exe";
     STARTUPINFOW si{sizeof(si)};
     PROCESS_INFORMATION pi{};
@@ -1007,7 +866,7 @@ static void play()
 
 static HWND mk(const wchar_t *cls, const wchar_t *t, DWORD style, int id, DWORD ex = 0)
 {
-    HWND c = CreateWindowExW(ex | (g_rtl ? WS_EX_LAYOUTRTL : 0), cls, T(t), WS_CHILD | WS_VISIBLE | style, 0, 0, 10, 10, g_hwnd, (HMENU)(INT_PTR)id, GetModuleHandleW(nullptr), nullptr);
+    HWND c = CreateWindowExW(ex | (0), cls, T(t), WS_CHILD | WS_VISIBLE | style, 0, 0, 10, 10, g_hwnd, (HMENU)(INT_PTR)id, GetModuleHandleW(nullptr), nullptr);
     SendMessageW(c, WM_SETFONT, (WPARAM)g_font, TRUE);
     return c;
 }
@@ -1028,8 +887,7 @@ static int textW(HWND c)
 
 static HWND g_cover;
 static bool g_hasCover;   // box art: built in (resources/local/cover.bmp) or cover.bmp beside the exe
-static HWND g_lblTitle, g_lblRes, g_lblMode, g_lblInt, g_btnIso, g_btnDir, g_btnOpen, g_btnGfx, g_btnCtl, g_lblLang, g_lang;
-static std::vector<LangItem> g_langs;
+static HWND g_lblTitle, g_lblRes, g_lblMode, g_lblInt, g_btnIso, g_btnDir, g_btnOpen, g_btnGfx, g_btnCtl;
 
 static int layout(bool apply)
 {
@@ -1050,7 +908,6 @@ static int layout(bool apply)
     mv(g_btnIso, M, y, bw1, ch); mv(g_btnDir, M + bw1 + gap, y, bw2, ch); y += ch + gap * 2;
     for (HWND c : {g_wide, g_log}) { mv(c, M, y, textW(c) + 3 * fh, lh); y += lh + gap / 2; }
     y += gap;
-    { int lw = textW(g_lblLang) + fh; mv(g_lblLang, M, y + (ch - fh) / 2, lw, fh + 4); mv(g_lang, M + lw + gap, y, fh * 14, ch + fh * 16); }
     y += ch + gap;
     { int w1 = textW(g_btnGfx) + 2 * fh; mv(g_btnGfx, M, y, w1, ch); mv(g_btnCtl, M + w1 + gap, y, textW(g_btnCtl) + 2 * fh, ch); }
     y += ch + gap * 2;
@@ -1070,25 +927,6 @@ static LRESULT CALLBACK proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
         case ID_PLAY: play(); return 0;
         case ID_GFX: graphicsSettings(); return 0;
         case ID_CTL: controlsSettings(); return 0;
-        case ID_LANG:
-            if (HIWORD(wp) == CBN_SELCHANGE) {
-                int i = (int)SendMessageW(g_lang, CB_GETCURSEL, 0, 0);
-                if (i >= 0 && i < (int)g_langs.size() && g_langs[i].code != langCode()) {
-                    iniSet(L"Language", L"language", g_langs[i].code);
-                    saveSettings();
-                    // start again in the new language
-                    wchar_t self[MAX_PATH];
-                    GetModuleFileNameW(nullptr, self, MAX_PATH);
-                    std::wstring cmd = L"\"" + std::wstring(self) + L"\"";
-                    STARTUPINFOW si{sizeof(si)};
-                    PROCESS_INFORMATION pi{};
-                    if (CreateProcessW(nullptr, &cmd[0], nullptr, nullptr, FALSE, 0, nullptr, exeDir().c_str(), &si, &pi)) {
-                        CloseHandle(pi.hThread); CloseHandle(pi.hProcess);
-                        DestroyWindow(h);
-                    }
-                }
-            }
-            return 0;
         case ID_OPEN: ShellExecuteW(nullptr, L"open", exeDir().c_str(), nullptr, nullptr, SW_SHOWNORMAL); return 0;
         }
         break;
@@ -1096,20 +934,13 @@ static LRESULT CALLBACK proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
     case WM_PROGRESS: SendMessageW(g_progress, PBM_SETPOS, wp, 0); return 0;
     case WM_DONE:
         g_busy = false;
-        if (lp) {   // the Ultra textures built (1), then the game started (2)
-            EnableWindow(g_play, TRUE);
-            if (wp) SendMessageW(g_progress, PBM_SETPOS, 1000, 0);
-            if (wp && lp == 2) play();
-            else if (wp && g_ultraOnly) DestroyWindow(h);
-            return 0;
-        }
         if (wp) { SendMessageW(g_progress, PBM_SETPOS, 1000, 0); refreshStatus(); }
         else EnableWindow(g_play, FALSE);
         return 0;
     case WM_SIZE: layout(true); return 0;
     case WM_CTLCOLORSTATIC: SetBkMode((HDC)wp, TRANSPARENT); return (LRESULT)GetSysColorBrush(COLOR_WINDOW);
     case WM_CLOSE:
-        if (g_busy && MessageBoxW(h, T(L"Still working (installing, or building the Ultra textures). Quit anyway?"), kTitle, MB_YESNO) != IDYES) return 0;
+        if (g_busy && MessageBoxW(h, T(L"The disc is still being extracted. Quit anyway?"), kTitle, MB_YESNO) != IDYES) return 0;
         saveSettings();
         DestroyWindow(h);
         return 0;
@@ -1121,20 +952,11 @@ static LRESULT CALLBACK proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int show)
 {
     SetProcessDPIAware();
-    langLoad();
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     INITCOMMONCONTROLSEX icc{sizeof(icc), ICC_STANDARD_CLASSES | ICC_PROGRESS_CLASS};
     InitCommonControlsEx(&icc);
     NONCLIENTMETRICSW ncm{sizeof(ncm)};
     SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0);
-    {   /* a face with the chosen language's letters (as the game's F10 panel: lang.c) */
-        static const struct { const wchar_t *code, *face; } F[] = {
-            {L"ja", L"Meiryo UI"}, {L"ko", L"Malgun Gothic"}, {L"zh-Hans", L"Microsoft YaHei UI"},
-            {L"zh-Hant", L"Microsoft JhengHei UI"}, {L"th", L"Leelawadee UI"}, {L"hi", L"Nirmala UI"}};
-        std::wstring code = langCode();
-        for (auto &f : F)
-            if (code == f.code) { wcsncpy(ncm.lfMessageFont.lfFaceName, f.face, LF_FACESIZE - 1); ncm.lfMessageFont.lfFaceName[LF_FACESIZE - 1] = 0; }
-    }
     g_font = CreateFontIndirectW(&ncm.lfMessageFont);
     {
         HDC dc = GetDC(nullptr);
@@ -1166,18 +988,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int show)
     g_log = mk(L"BUTTON", L"Write a log file (for bug reports)", BS_AUTOCHECKBOX | WS_TABSTOP, ID_LOG);
     g_btnGfx = mk(L"BUTTON", L"Graphics settings…", WS_TABSTOP, ID_GFX);
     g_btnCtl = mk(L"BUTTON", L"Controls…", WS_TABSTOP, ID_CTL);
-    g_lblLang = mk(L"STATIC", L"Language (game and launcher):", 0, -1);
-    g_lang = mk(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, ID_LANG);
-    g_langs = langList();
-    {
-        std::wstring cur = langCode();
-        int sel = 0;
-        for (size_t i = 0; i < g_langs.size(); i++) {
-            SendMessageW(g_lang, CB_ADDSTRING, 0, (LPARAM)g_langs[i].name.c_str());
-            if (!_wcsicmp(g_langs[i].code.c_str(), cur.c_str())) sel = (int)i;
-        }
-        SendMessageW(g_lang, CB_SETCURSEL, sel, 0);
-    }
+
     g_play = mk(L"BUTTON", L"Play", BS_DEFPUSHBUTTON | WS_TABSTOP, ID_PLAY);
     g_btnOpen = mk(L"BUTTON", L"Open folder", WS_TABSTOP, ID_OPEN);
     // Box art (your own disc's cover), scaled into the picture control.
@@ -1205,15 +1016,6 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int show)
     /* "The Two Towers Recompiled.exe" --graphics opens the settings directly */
     if (cmdLine && wcsstr(cmdLine, L"--graphics")) { UpdateWindow(g_hwnd); graphicsSettings(); }
     if (cmdLine && wcsstr(cmdLine, L"--controls")) { UpdateWindow(g_hwnd); controlsSettings(); }
-    /* --build-ultra: the game asks for the Ultra textures to be built (they
-     * were turned on in its menus); the window closes when they are */
-    if (cmdLine && wcsstr(cmdLine, L"--build-ultra")) {
-        UpdateWindow(g_hwnd);
-        g_ultraOnly = true;
-        if (ultra_build::needed(exeDir())) ultraBuild(false);
-        else DestroyWindow(g_hwnd);
-    }
-
     MSG msg;
     while (GetMessageW(&msg, nullptr, 0, 0)) {
         if (!IsDialogMessageW(g_hwnd, &msg)) { TranslateMessage(&msg); DispatchMessageW(&msg); }

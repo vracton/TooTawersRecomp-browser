@@ -51,9 +51,7 @@ extern uint32_t tt_gcall(uint32_t va, uint32_t thisptr, int n, const uint32_t *a
  * or Load Game turn it off. Its element sits after the ECTS HUD's (0x4BA1C0, text 0x4BA2A0). */
 #define COOP_EL     0x4BA1C0u
 #define COOP_TXT    0x4BA2A0u
-#define ITEM_COOP   4
-#define ITEM_VS     5   /* (1.9.7) Versus, under Co-op: Exit moves down to item 6 */
-#define ITEM_EXIT   6
+#define ITEM_EXIT   4
 static uint32_t s_vs_el, s_vs_txt;   /* its element and words (contiguous memory of ours) */
 extern volatile int tt_vs_menu_on, tt_vs_screen_req;
 extern volatile int tt_coop_menu_on;
@@ -117,92 +115,44 @@ static int beaten_here(void) { int c = (int)G32(0x4AD050u + 8u + 0x10u); return 
 #define STATS_REPLAY_WORD 0x00426E88u
 static int s_replay_hidden[4];
 static int replay_slot(uint32_t el) { return el == SHOP_REPLAY_LEAF ? 0 : el == SHOP_REPLAY_WORD ? 1 : el == STATS_REPLAY_LEAF ? 2 : el == STATS_REPLAY_WORD ? 3 : -1; }
-/* (1.9.7) Impossible on New Game's difficulty screen: a fourth word of ours right of Expert (a copy of Expert's
- * element), the four spread over the row. Its state is the setting (Gameplay Options' Impossible); the game's own
- * cursor stays on Expert while it is chosen (imp_screen) */
+/* Keep the three retail difficulty choices clickable in New Game. */
 #define DIFF_EASY   0x00432B74u
 #define DIFF_NORMAL 0x00432C50u
 #define DIFF_EXPERT 0x00432D2Cu
-static uint32_t s_imp_el, s_imp_txt;
+static const int diff_centres[] = { 107, 320, 533 };
 static volatile int s_diff_swoosh = -1;
-static int diff_here(void);
-int tt_diff_swoosh_x(int k, int def) { static const int cxs[3] = { 85, 228, 375 }; return diff_here() && k >= 0 && k < 3 && !getenv("TT_NODIFFSWOOSH") ? cxs[k] : def; }   /* (2.1) the game's own swoosh for Easy, Normal, Expert at the words diff_layout moved, as the mouse's */   /* (2.1) the swoosh to difficulty k (0 Easy .. 3 Impossible) at the next draw: the mouse's choices and Impossible have it too */
-static int diff_here(void) { return G32(FE_SCREEN) == 4 && G32(MM_OBJ + 0x10) == 3 && G32(MM_OBJ + 4) != 6 && !tt_coop_menu_on && !tt_vs_menu_on && !getenv("TT_NOIMPWORD"); }
+
+static int diff_here(void)
+{
+    return G32(FE_SCREEN) == 4 && G32(MM_OBJ + 0x10) == 3 && G32(MM_OBJ + 4) != 6;
+}
+
+int tt_diff_swoosh_x(int k, int fallback)
+{
+    return diff_here() && k >= 0 && k < 3 && !getenv("TT_NODIFFSWOOSH")
+        ? diff_centres[k] : fallback;
+}
+
 static void diff_layout(uint32_t el)
 {
-    static const int cx[3] = { 85, 228, 375 };
     int k = el == DIFF_EASY ? 0 : el == DIFF_NORMAL ? 1 : el == DIFF_EXPERT ? 2 : -1;
-    extern int tt_coop_setting(int i);
     if (k < 0 || !diff_here()) return;
-    G32(el + 8) = (uint32_t)(cx[k] - 85); G32(el + 0x10) = 170;
-    if (k == 2 && tt_coop_setting(6) == 1) G32(el + 0x20) = 0xFF28364Eu;   /* (Impossible chosen: Expert dim) */
+    G32(el + 8) = (uint32_t)(diff_centres[k] - 85);
+    G32(el + 0x10) = 170;
 }
-static void diff_imp_draw(void)
+
+static void diff_draw_swoosh(void)
 {
-    extern int tt_coop_setting(int i); extern int tt_tr16(const char *en, uint16_t *out, int max);
-    uint16_t t[24]; int n, i;
-    if (!diff_here()) return;
-    if (!s_imp_el) { extern uint32_t xbox_ContiguousAlloc(uint32_t size, uint32_t alignment); s_imp_el = xbox_ContiguousAlloc(0x200, 16u); s_imp_txt = s_imp_el ? s_imp_el + 0x100 : 0; }
-    if (!s_imp_el) return;
-    for (i = 0; i < (int)EL_SIZE; i += 4) G32(s_imp_el + (uint32_t)i) = G32(DIFF_EXPERT + (uint32_t)i);
-    n = tt_tr16("Impossible", t, 24);
-    for (i = 0; i < n; i++) G16(s_imp_txt + 2u * (uint32_t)i) = t[i];
-    G16(s_imp_txt + 2u * (uint32_t)n) = 0;
-    G32(s_imp_el + 0x34) = s_imp_txt;
-    G32(s_imp_el + 8) = 460; G32(s_imp_el + 0x10) = 170;
-    G32(s_imp_el + 0x20) = tt_coop_setting(6) == 1 && G32(MM_OBJ + 0x18) == 2 ? 0xFF9FD2F0u : 0xFF28364Eu;
-    G8(s_imp_el + 0x24) = 1;
-    if (s_diff_swoosh >= 0) { int k = s_diff_swoosh; s_diff_swoosh = -1;   /* (the game's own, at its row's height 0x18A, across from the word's middle: 85, 228, 375; ours 545) */
-        if (k <= 3 && !getenv("TT_NODIFFSWOOSH")) { static const int cxs[4] = { 85, 228, 375, 545 }; uint32_t a[3] = { 0x1A, (uint32_t)cxs[k], 0x18Au }; tt_gcall(0x000CB590u, 0x4A02F8u, 3, a); } }
-    tt_gcall(0x000C8940u, s_imp_el, 0, NULL);
-}
-/* (1.9.7) and on Options > General Options' Difficulty row (the game's own page: the words at y 333, a ring pair over
- * the chosen at y 318): a fourth column, Impossible, the four spread over the row; chosen, the game's Expert is kept
- * underneath with its ring hidden */
-#define GO_LBL      0x00435438u   /* "Difficulty:" (lit 0xFF77EAF8 while its row is the cursor's) */
-static const uint32_t s_go_word[3] = { 0x00435B18u, 0x00435BF4u, 0x00435CD0u };
-static const uint32_t s_go_ring[3][2] = { { 0x00434AC4u, 0x00434BA0u }, { 0x00434C7Cu, 0x00434D58u }, { 0x00434E34u, 0x00434F10u } };
-static uint32_t s_go_el;   /* ours: the word, then the ring pair */
-static volatile int s_go_expert, s_go_row, s_go_seen;   /* the game's Expert chosen, the row the cursor's, seen this frame */
-static int s_go_hid[2];
-static int go_here(void) { return (G32(FE_SCREEN) == 5 || G32(FE_SCREEN) == 8 || G32(FE_SCREEN) == 6) && G32(s_go_word[2] + 0x0C) == 333u && G32(s_go_word[2] + 0x30) == 1u && !getenv("TT_NOIMPWORD"); }
-static void go_layout(uint32_t el)
-{
-    static const int cx[4] = { 255, 373, 499, 590 };   /* (the game's own three kept where they are: its cursor's glow is drawn there) */
-    extern int tt_coop_setting(int i); extern void tt_coop_setting_set(int i, int v);
-    int k;
-    if (!go_here()) return;
-    for (k = 0; k < 3; k++) {
-        if (el == s_go_word[k]) { if (k == 2) G32(el + 8) = (uint32_t)(cx[k] - 64 - 8); if (k == 2) { s_go_seen = 1; s_go_row = G32(GO_LBL + 0x20) == 0xFF77EAF8u; } }
-        if (el == s_go_ring[k][0] || el == s_go_ring[k][1]) {
-            int j = el == s_go_ring[k][1];
-            if (k == 2) {
-                s_go_expert = G8(el + 0x24) != 0 || s_go_hid[j];
-                if (!s_go_expert && tt_coop_setting(6) == 1 && j == 0) { tt_coop_setting_set(6, 0); tt_dbg("[MENU] General Options: Impossible off (another difficulty)\n"); }
-                if (tt_coop_setting(6) == 1 && G8(el + 0x24)) { s_go_hid[j] = 1; G8(el + 0x24) = 0; }
-            }
+    if (diff_here() && s_diff_swoosh >= 0) {
+        int k = s_diff_swoosh;
+        s_diff_swoosh = -1;
+        if (!getenv("TT_NODIFFSWOOSH")) {
+            uint32_t args[] = { 0x1A, (uint32_t)diff_centres[k], 0x18A };
+            tt_gcall(0x000CB590u, 0x4A02F8u, 3, args);
         }
     }
 }
-static void go_done(uint32_t el)
-{
-    extern int tt_coop_setting(int i); extern int tt_tr16(const char *en, uint16_t *out, int max);
-    int j;
-    for (j = 0; j < 2; j++) if (el == s_go_ring[2][j] && s_go_hid[j]) { G8(el + 0x24) = 1; s_go_hid[j] = 0; }
-    if (el != s_go_word[2] || !go_here()) return;
-    if (!s_go_el) { extern uint32_t xbox_ContiguousAlloc(uint32_t size, uint32_t alignment); s_go_el = xbox_ContiguousAlloc(0x400, 16u); }
-    if (!s_go_el) return;
-    {   uint32_t w = s_go_el, t = s_go_el + 0x300, i; uint16_t tx[24]; int n = tt_tr16("Impossible", tx, 24), imp = tt_coop_setting(6) == 1;
-        for (j = 0; j < 2; j++) { uint32_t r = s_go_el + 0xDC * (uint32_t)(j + 1);
-            for (i = 0; i < EL_SIZE; i += 4) G32(r + i) = G32(s_go_ring[2][j] + i);
-            G32(r + 8) = 590 - 32; G8(r + 0x24) = (uint8_t)imp;
-            tt_gcall(0x000C8940u, r, 0, NULL); }
-        for (i = 0; i < EL_SIZE; i += 4) G32(w + i) = G32(el + i);
-        for (i = 0; i < (uint32_t)n; i++) G16(t + 2 * i) = tx[i];
-        G16(t + 2 * (uint32_t)n) = 0; G32(w + 0x34) = t; G32(w + 8) = 590 - 64; G8(w + 0x24) = 1;
-        tt_gcall(0x000C8940u, w, 0, NULL);
-    }
-}
+
 void tt_menu_el(uint32_t el, uint32_t ret)
 {
     if ((el == 0x0042D590u || el == 0x0042D66Cu || el == 0x0042D748u || el == 0x0042D824u) && ret == 0x00076F17u && beaten_here()) {   /* (co-op: "Already Beaten" in the hero lines' place) */
@@ -216,9 +166,6 @@ void tt_menu_el(uint32_t el, uint32_t ret)
         } else { int k = el == 0x0042D66Cu ? 0 : el == 0x0042D748u ? 1 : 2; s_beaten_hid[k] = G8(el + 0x24) + 1; G8(el + 0x24) = 0; }
     }
     diff_layout(el);
-    go_layout(el);
-    if (getenv("TT_GOLOG") && go_here()) { int x = (int)G32(el + 8), y = (int)G32(el + 0xC); static DWORD lt; static int n;
-        if (y >= 290 && y <= 360 && x >= 420 && x <= 560 && n < 40 && GetTickCount() - lt > 50) { lt = GetTickCount(); n++; tt_dbg("[GOLOG] %08X x %d y %d w %d h %d on %u tex %08X col %08X from %08X\n", el, x, y, (int)G32(el + 0x10), (int)G32(el + 0x14), G8(el + 0x24), G32(el + 0xB8), G32(el + 0x20), ret); } }
     {   /* co-op: Replay not drawn on the shops, nor on player 2's stats screen (only player 1's stats keep the
          * game's Replay: the screens follow each other) */
         extern int tt_coop_post_on(void); extern int tt_coop_post_ph; int k = replay_slot(el);
@@ -293,8 +240,7 @@ void tt_menu_el_done(uint32_t el)
     if (s_unav_on && el == tt_unav_word_el) { G32(el + 0x34) = s_unav_saved; s_unav_on = 0; }
     if (G32(FE_SCREEN) == 1) { extern void tt_map_research(void); tt_map_research(); }
     if (el == 0x00430ADCu) { extern void tt_coop_select_draw(void); tt_coop_select_draw(); }   /* the character select's last element (Help): co-op's prompt on top */
-    if (el == DIFF_EXPERT) diff_imp_draw();
-    go_done(el);
+    if (el == DIFF_EXPERT) diff_draw_swoosh();
     if (s_tint_on && el == s_tint_el) { G32(el + 0x20) = s_tint_saved; s_tint_on = 0; }
     if (s_press_on && el == PRESS_EL) { G32(el + 0x34) = s_press_saved; s_press_on = 0; }
     if (s_tint2_on && el == s_tint2_el) { G32(el + 0xB8) = s_tint2_saved; s_tint2_on = 0; }
@@ -373,25 +319,11 @@ static void exit_el_setup(void)
     uint16_t txt[24];
     uint32_t i, n = (uint32_t)tt_tr16("Exit", txt, 24);   /* (in the chosen language: lang.c) */
     for (i = 0; i < EL_SIZE; i += 4) G32(EXIT_EL + i) = G32(MM_CREDITS + i);
-    G32(EXIT_EL + 0x0C) = G32(MM_CREDITS + 0x0C) + 3 * mm_step();   /* (under Co-op and Versus) */
+    G32(EXIT_EL + 0x0C) = G32(MM_CREDITS + 0x0C) + mm_step();
     for (i = 0; i < n; i++) G16(EXIT_TXT + 2 * i) = txt[i];
     G16(EXIT_TXT + 2 * i) = 0;
     G32(EXIT_EL + 0x34) = EXIT_TXT;
-    n = (uint32_t)tt_tr16("Co-op", txt, 24);
-    for (i = 0; i < EL_SIZE; i += 4) G32(COOP_EL + i) = G32(MM_CREDITS + i);
-    G32(COOP_EL + 0x0C) = G32(MM_CREDITS + 0x0C) + mm_step();
-    for (i = 0; i < n; i++) G16(COOP_TXT + 2 * i) = txt[i];
-    G16(COOP_TXT + 2 * i) = 0;
-    G32(COOP_EL + 0x34) = COOP_TXT;
-    if (!s_vs_el) { extern uint32_t xbox_ContiguousAlloc(uint32_t size, uint32_t alignment); s_vs_el = xbox_ContiguousAlloc(0x200, 16u); s_vs_txt = s_vs_el ? s_vs_el + 0x100 : 0; }
-    if (s_vs_el) {
-        n = (uint32_t)tt_tr16("Versus", txt, 24);
-        for (i = 0; i < EL_SIZE; i += 4) G32(s_vs_el + i) = G32(MM_CREDITS + i);
-        G32(s_vs_el + 0x0C) = G32(MM_CREDITS + 0x0C) + 2 * mm_step();
-        for (i = 0; i < n; i++) G16(s_vs_txt + 2 * i) = txt[i];
-        G16(s_vs_txt + 2 * i) = 0;
-        G32(s_vs_el + 0x34) = s_vs_txt;
-    }
+
 }
 static void play_sound(uint32_t id, float pan)
 {
@@ -411,7 +343,7 @@ int tt_mm_down(uint32_t scr)
 {
     uint32_t cur = G32(scr + 0x14), to = cur + 1;
     if (getenv("TT_MMLOG")) tt_dbg("[MMDOWN] scr %08X cur %u here %d sub %u screen %u\n", scr, cur, mm_here(scr), G32(scr + 0x10), G32(FE_SCREEN));
-    if (!mm_here(scr) || cur < 3 || to > (uint32_t)(exit_on() ? ITEM_EXIT : ITEM_VS)) return 0;   /* Credits -> Co-op -> Versus -> Exit */
+    if (!mm_here(scr) || cur < 3 || to > (uint32_t)(exit_on() ? ITEM_EXIT : 3)) return 0;   /* Credits -> Exit */
     G32(scr + 0x14) = to;
     swoosh_to((int)to);
     play_sound(0xA9D, -1.0f);   /* (the game's two cues for a move) */
@@ -421,35 +353,6 @@ int tt_mm_down(uint32_t scr)
 /* its colours (0x00079870), after the game's: Credits dimmed, Exit lit (the
  * game's own write for a choice of 4 lands past its table: put back) */
 static uint32_t s_keep, s_keep2;
-/* (1.9.7) a safety net for Co-op and Versus (items 4 and 5, which the game has no screen for): a press the game saw
- * before tt_mm_input could hand it on as Options left the main menu for the screen in its +4 (0, none: a black
- * screen, the front end calling a null screen object at 0x000D1907, in a playtest with the mouse). While one of them
- * is chosen the menu's next screen is Options (5), and if the game leaves that way by itself, Options opens on the
- * Co-op or Versus menu (mm_net_tick) */
-static volatile uint32_t s_net_item;
-static void mm_net(uint32_t scr)
-{
-    uint32_t c;
-    if (scr != MM_OBJ || G32(FE_SCREEN) != 4 || G32(scr + 0x10) != 0 || getenv("TT_TEST_NONET")) return;
-    c = G32(scr + 0x14);
-    if (c == ITEM_COOP || c == ITEM_VS) { G32(scr + 4) = 5; s_net_item = c; }
-    else if (s_net_item) { if (G32(scr + 4) == 5 && c != 2) G32(scr + 4) = 0; s_net_item = 0; }   /* (on Options -- where the press on Co-op or Versus is handed over -- its 5 stays) */
-}
-static void mm_net_tick(void)
-{
-    extern volatile int tt_coop_screen_req;
-    uint32_t c = s_net_item;
-    if (!c || G32(FE_SCREEN) != 5) return;
-    s_net_item = 0;
-    if (tt_coop_screen_req || tt_vs_screen_req || s_coop_opening) return;   /* (the press went as ours) */
-    tt_coop_menu_on = 1; tt_vs_menu_on = c == ITEM_VS; if (c == ITEM_VS) tt_vs_screen_req = 1; else tt_coop_screen_req = 1;
-    tt_dbg("[MENU] %s pressed through to the game: opened as its menu (Options)\n", c == ITEM_VS ? "Versus" : "Co-op");
-}
-/* (1.9.7) the last guard, on the game thread each frame (the pad poll, twotowers_manual.c): the main menu on its way
- * out (state not 0) with a next screen the front end has no object for (+4 outside 1-11) -- left that way by a press on
- * Co-op or Versus the game took as itself (a black screen: the front end calling a null screen object). It goes to
- * Options, opened as the menu chosen last (s_mm_last) */
-static volatile uint32_t s_mm_last;
 volatile int tt_vs_return;   /* (1.9.7) 1: a Versus match over, the game to be left (the pause menu's Exit to Menu, Yes); 2: a Versus
                                * game left: through the map and the main menu to the Versus menu (vs_return_nav) */
 volatile int tt_vs_played;   /* a Versus level was played (twotowers_manual.c): its leaving goes back to the Versus menu */
@@ -480,9 +383,6 @@ static void vs_keep_tick(void)
 static float mm_f(uint32_t a) { uint32_t v = G32(a); float f; memcpy(&f, &v, 4); return f; }
 void tt_mm_guard(void)
 {
-    vs_keep_tick();
-    { extern void tt_ach_tick(void); tt_ach_tick(); }   /* (1.9.7: what the saves hold, now and then) */
-    { extern void tt_vs_install(void); tt_vs_install(); }
     extern volatile int tt_coop_screen_req; uint32_t nx, st, it;
     if (getenv("TT_MM_GUARDLOG")) { static uint32_t lf; if (G32(FE_SCREEN) != lf) { lf = G32(FE_SCREEN); tt_dbg("[MENU] guard: screen %u\n", lf); } }
     if (tt_vs_played && G32(FE_SCREEN) == 6) {   /* a Versus game left from the pause menu: to the main menu (4), not the map (1) */
@@ -500,14 +400,7 @@ void tt_mm_guard(void)
          * Game, Options or Credits with no next screen (the item changed after the press was taken: a black screen, the front end calling
          * screen 0's null object, 0x000D1907): the item's own screen, as the game sets it at the press (0x00079EB5) */
         G32(MM_OBJ + 4) = nx = it == 1 ? 3u : it == 2 ? 5u : 2u; tt_dbg("[MENU] guard: the main menu leaving on item %u with no next screen: screen %u\n", it, nx); }
-    if (st == 0 && (it == ITEM_COOP || it == ITEM_VS)) { s_mm_last = it; G32(MM_OBJ + 4) = 5; s_net_item = it; }   /* (before the game's update this frame: a press it takes as itself leaves for Options, mm_net_tick opening ours) */
-    if (st == 0 || it == 0 || (nx >= 1 && nx <= 11)) return;   /* (New Game, item 0, leaves with +4 unchanged: its difficulty) */
-    tt_dbg("[MENU] guard: the main menu leaving (state %u, item %u) for screen %u: Options, as the %s menu\n", st, it, nx, s_mm_last == ITEM_VS ? "Versus" : "Co-op");
-    G32(MM_OBJ + 4) = 5;
-    if (!tt_coop_screen_req && !tt_vs_screen_req) {
-        tt_coop_menu_on = 1; tt_vs_menu_on = s_mm_last == ITEM_VS;
-        if (s_mm_last == ITEM_VS) tt_vs_screen_req = 1; else tt_coop_screen_req = 1;
-    }
+
 }
 static uint32_t s_keep3;
 void tt_mm_colors_pre(uint32_t scr) { s_keep = G32(MM_TABLE + 12 * EL_SIZE + 0x20); s_keep2 = G32(MM_TABLE + 13 * EL_SIZE + 0x20); s_keep3 = G32(MM_TABLE + 14 * EL_SIZE + 0x20); (void)scr; }
@@ -518,7 +411,9 @@ static volatile int s_on_sel, s_on_pass, s_on_auto = -1, s_on_drawn, s_on_swoosh
 static uint32_t s_on_el, s_on_txt;
 extern volatile int tt_net_screen_req;
 /* (2.0.1) online play held back for 2.0.2: no Online on the main menu unless TT_ONLINE (or an online game's own restart) */
-static int online_on(void) { static int v = -1; if (v < 0) v = getenv("TT_ONLINE") || getenv("TT_NET_LOBBY") || getenv("TT_NET"); return v; }
+static int online_on(void) {
+    return 0;
+}
 static void online_draw(uint32_t scr)
 {
     if (!online_on()) return;
@@ -552,7 +447,6 @@ void tt_mm_colors_post(uint32_t scr)
 {
     if (G32(scr + 0x14) >= 4) { G32(MM_TABLE + 12 * EL_SIZE + 0x20) = s_keep; G32(MM_TABLE + 13 * EL_SIZE + 0x20) = s_keep2; G32(MM_TABLE + 14 * EL_SIZE + 0x20) = s_keep3; }   /* (its write for a choice of 4 or 5 lands past its table) */
     if (s_coop_opening && mm_shown(scr)) G32(MM_TABLE + 10 * EL_SIZE + 0x20) = COL_OFF;   /* (Options, the item the game was handed) */
-    mm_net(scr);
     if (!mm_here(scr)) return;
     if (G32(scr + 0x14) >= 4) G32(MM_CREDITS + 0x20) = COL_OFF;
     if (s_on_sel && G32(scr + 0x14) <= 3) G32(MM_TABLE + (8 + G32(scr + 0x14)) * EL_SIZE + 0x20) = COL_OFF;   /* (2.1: Online lit instead) */
@@ -604,23 +498,11 @@ static void launcher_prompt(void)
 void tt_mm_draw(uint32_t scr)
 {
     if (getenv("TT_MMLOG")) { static int n, ls = -1; int sh = mm_shown(scr); if (n++ % 60 == 0 || sh != ls) { ls = sh; tt_dbg("[MMDRAW] n %d scr %08X shown %d sub %u nx %u screen %u vs %08X cred %d,%d coop %d,%d step %d prev %d\n", n, scr, mm_shown(scr), G32(scr + 0x10), G32(scr + 4), G32(FE_SCREEN), s_vs_el, (int)G32(MM_CREDITS + 8), (int)G32(MM_CREDITS + 0x0C), (int)G32(COOP_EL + 8), (int)G32(COOP_EL + 0x0C), mm_step(), (int)G32(MM_CREDITS - EL_SIZE + 0x0C)); } }
-    mm_net(scr);
-    { extern void tt_credits_music_init(void); tt_credits_music_init(); }
     if (!mm_shown(scr)) return;
-    help_move();
     launcher_prompt();
     exit_el_setup();
-    online_draw(scr);
-    G32(COOP_EL + 0x20) = (G32(scr + 0x14) == ITEM_COOP && !s_on_sel) || (s_coop_opening && !tt_vs_menu_on) ? COL_ON : COL_OFF;
-    G8(COOP_EL + 0x24) = 1;
-    tt_gcall(0x000C8940u, COOP_EL, 0, NULL);
-    if (s_vs_el) {
-        G32(s_vs_el + 0x20) = (G32(scr + 0x14) == ITEM_VS && !s_on_sel) || (s_coop_opening && tt_vs_menu_on) ? COL_ON : COL_OFF;
-        G8(s_vs_el + 0x24) = 1;
-        tt_gcall(0x000C8940u, s_vs_el, 0, NULL);
-    }
     if (!exit_on()) return;
-    G32(EXIT_EL + 0x20) = G32(scr + 0x14) == ITEM_EXIT && !s_on_sel ? COL_ON : COL_OFF;
+    G32(EXIT_EL + 0x20) = G32(scr + 0x14) == ITEM_EXIT ? COL_ON : COL_OFF;
     G8(EXIT_EL + 0x24) = 1;
     tt_gcall(0x000C8940u, EXIT_EL, 0, NULL);
 }
@@ -635,20 +517,6 @@ static int tt_mm_input(unsigned long port, int a_down, int start_down)
     *prev = now;
     if (G32(FE_SCREEN) != 4 || G32(MM_OBJ + 0x10) != 0) return 0;
     cur = G32(MM_OBJ + 0x14);
-    /* (1.9.7) Co-op and Versus act on the press being down, not only on its first poll: the edge is per pad, and a
-     * press that reached the game without it left the game acting on item 4 or 5, which it has no screen for (a black
-     * screen, the front end calling a null screen object, 0x000D1907, in a playtest). Once acted on the item is 2 */
-    if (getenv("TT_TEST_RAWCOOP") && cur >= ITEM_COOP && cur <= ITEM_VS) return 0;   /* (testing: the game gets the press itself, for the safety net in tt_mm_colors_post) */
-    if (cur == ITEM_COOP) {   /* co-op on, and the press goes to the game as Options: opened on the Co-op menu (options.c) */
-        if (now) { extern volatile int tt_coop_screen_req; tt_coop_menu_on = 1; tt_vs_menu_on = 0; tt_coop_screen_req = 1; s_coop_opening = 1; s_open_t = GetTickCount(); s_open_item = ITEM_COOP; s_open_tries = 0; G32(MM_OBJ + 0x14) = 2; tt_dbg("[MENU] Co-op chosen: co-op on, into the Co-op menu\n"); }
-        return getenv("TT_TEST_EATNET") != NULL;   /* (testing: the press lost) */
-    }
-    if (cur == ITEM_VS) {   /* (1.9.7) Versus: co-op's two heroes against each other; as Co-op, the Versus menu (options.c) */
-        if (now) { tt_coop_menu_on = 1; tt_vs_menu_on = 1; tt_vs_screen_req = 1; s_coop_opening = 1; s_open_t = GetTickCount(); s_open_item = ITEM_VS; s_open_tries = 0; G32(MM_OBJ + 0x14) = 2; tt_dbg("[MENU] Versus chosen: into the Versus menu\n"); }
-        return 0;
-    }
-    if (edge && cur <= 1 && s_coop_keep) { s_coop_keep = 0; tt_coop_menu_on = 1; tt_dbg("[MENU] %s from the Co-op menu: co-op on\n", cur ? "Load Game" : "New Game"); return 0; }
-    if (edge && cur <= 1 && tt_coop_menu_on && !tt_coop_menu_go) { extern volatile int tt_vs_start_pending;   /* (2.0.1: not while the Co-op/Versus menu's choice waits to be pressed: a press still down from it) */ tt_coop_menu_on = 0; tt_vs_menu_on = 0; tt_vs_start_pending = 0; tt_dbg("[MENU] %s chosen: co-op off (solo)\n", cur ? "Load Game" : "New Game"); }
     if (!exit_on() || cur != ITEM_EXIT) return 0;
     if (edge) s_exit_go = 1;
     return 1;
@@ -742,7 +610,6 @@ static void snapshot(void)
         if (!t) { if (s_nit >= MAXEL) break; t = &s_it[s_nit++]; }
         t->a = e; t->ret = s_ret[p][i];
         if (e == EXIT_EL || e == COOP_EL || (s_vs_el && e == s_vs_el)) t->ret = 0x00079017u;   /* (drawn by us, one of the main menu's) */
-        if (s_imp_el && e == s_imp_el) t->ret = s_ret[p][0];   /* (the difficulty row's fourth: one of its list) */
         t->x = (int)G32(e + 8); t->y = (int)G32(e + 0xC); t->w = (int)G32(e + 0x10); t->h = (int)G32(e + 0x14);
         t->col = G32(e + 0x20); t->on = G8(e + 0x24) != 0; t->font = G32(e + 0x2C);
         t->text = G32(e + 0x30) == 1; t->txt = G32(e + 0x34);
@@ -822,7 +689,7 @@ static Group *group_of(int item)
 static void swoosh_to(int idx);
 static int mm_jump_to(const Item *s, const Item *t)
 {
-    int idx, mx = exit_on() ? ITEM_EXIT : ITEM_VS;
+    int idx, mx = exit_on() ? ITEM_EXIT : 3;
     if (getenv("TT_MOUSE_STEPS") || G32(FE_SCREEN) != 4 || G32(MM_OBJ + 0x10) != 0 || t->x != 100 || t->w != 440 || s->x != 100 || s->w != 440) return 0;
     idx = (t->y - 260 + 15) / 30;
     if (t->y < 245 || idx < 0 || idx > mx) return 0;
@@ -1564,7 +1431,6 @@ static void vs_return_nav(XState *st)
     { static uint32_t lf; if (fe != lf) { lf = fe; tt_dbg("[VSMENU] the way back: screen %u (main menu state %u)\n", fe, G32(MM_OBJ + 0x10)); } }
     if (fe == 5) { if (++ph > 30) { tt_vs_return = 0; tt_vs_played = 0; s_vs_cover = 0; tt_dbg("[VSMENU] back in the Versus menu\n"); } return; }
     if (fe == 4 && G32(MM_OBJ + 0x10) == 0) {
-        G32(MM_OBJ + 0x14) = ITEM_VS;
         if ((e % 1200u) < 300u) { st->Gamepad.bAnalogButtons[0] = 255; st->dwPacketNumber += (e / 1200u + 1) << 24; }
     }
 }
@@ -1572,40 +1438,6 @@ static void vs_return_nav(XState *st)
  * 2 Expert): Right past Expert chooses it, Left leaves it (the press kept from the game, Expert stays); a banner says
  * so. It is the game's Expert with ours on top (twotowers_manual.c, tt_impossible), kept in the ini's [Coop]
  * impossible (Options > Gameplay Options shows it too). The co-op's New Game goes by the co-op Difficulty instead */
-static void imp_screen(XState *st)
-{
-    extern int tt_coop_setting(int i); extern void tt_coop_setting_set(int i, int v); extern void tt_opt_move_sound(void);
-    extern void xbox_BannerSet(const char *title, const char *line);
-    static int on_screen, prev_l, prev_r, hold_l; static DWORD seen;
-    int here = G32(FE_SCREEN) == 4 && G32(MM_OBJ + 0x10) == 3 && G32(MM_OBJ + 4) != 6 && !tt_coop_menu_on && !tt_vs_menu_on;
-    int l, r, imp;
-    {   /* (General Options' Difficulty row: Right past Expert, Left back) */
-        static int gl, gr, ghold;
-        if (go_here() && s_go_seen && s_go_row) {
-            int L = (st->Gamepad.wButtons & PAD_LEFT) || st->Gamepad.sThumbLX < -16000, R = (st->Gamepad.wButtons & PAD_RIGHT) || st->Gamepad.sThumbLX > 16000, im = tt_coop_setting(6) == 1;
-            if (R && !gr && !im && s_go_expert) { tt_coop_setting_set(6, 1); tt_opt_move_sound(); tt_dbg("[MENU] General Options: Impossible\n"); }
-            else if (L && !gl && im) { tt_coop_setting_set(6, 0); ghold = 1; tt_opt_move_sound(); tt_dbg("[MENU] General Options: Expert (Impossible off)\n"); }
-            if (ghold || (im && L)) { if (L) { st->Gamepad.wButtons &= (uint16_t)~PAD_LEFT; if (st->Gamepad.sThumbLX < 0) st->Gamepad.sThumbLX = 0; } else ghold = 0; }
-            gl = L; gr = R;
-        } else gl = gr = ghold = 0;
-    }
-    if (!here) { if (on_screen) { on_screen = 0; xbox_BannerSet(NULL, NULL); } prev_l = prev_r = 0; return; }
-    imp = tt_coop_setting(6);
-    if (!on_screen) { on_screen = 1; seen = GetTickCount(); if (imp) G32(MM_OBJ + 0x18) = 2; }
-    l = (st->Gamepad.wButtons & PAD_LEFT) || st->Gamepad.sThumbLX < -16000;
-    r = (st->Gamepad.wButtons & PAD_RIGHT) || st->Gamepad.sThumbLX > 16000;
-    if (GetTickCount() - seen > 250) {
-        if (r && !prev_r && !imp && G32(MM_OBJ + 0x18) == 2) { tt_coop_setting_set(6, 1); imp = 1; s_diff_swoosh = 3; tt_opt_move_sound(); tt_dbg("[MENU] difficulty: Impossible\n"); }
-        else if (l && !prev_l && imp) { tt_coop_setting_set(6, 0); imp = 0; hold_l = 1; s_diff_swoosh = 2; tt_opt_move_sound(); tt_dbg("[MENU] difficulty: Expert (Impossible off)\n");
-            st->Gamepad.wButtons &= (uint16_t)~PAD_LEFT; st->Gamepad.sThumbLX = 0; }
-    }
-    if (hold_l) { if (l) { st->Gamepad.wButtons &= (uint16_t)~PAD_LEFT; if (st->Gamepad.sThumbLX < 0) st->Gamepad.sThumbLX = 0; } else hold_l = 0; }   /* (held on: still the Left that left Impossible) */
-    if (imp && (l || prev_l) && G32(MM_OBJ + 0x18) == 2) { st->Gamepad.wButtons &= (uint16_t)~PAD_LEFT; if (st->Gamepad.sThumbLX < 0) st->Gamepad.sThumbLX = 0; }   /* (the Left that left it: not the game's) */
-    if (imp && G32(MM_OBJ + 0x18) != 2) { tt_coop_setting_set(6, 0); imp = 0; }   /* (another chosen, by the mouse) */
-    prev_l = l; prev_r = r;
-    if (imp && getenv("TT_IMPBANNER")) xbox_BannerSet("IMPOSSIBLE", "Harder than Expert: any enemy's second blow fells you");
-    else xbox_BannerSet(NULL, NULL);
-}
 volatile int tt_in_hle;
 static int s_pad_merging;   /* (the co-op pages' merge reads the other ports: those reads are left raw) */
 /* (1.9.9) Versus' pause menu: Restart Match. The game's pause list is pictures of its words (the BFF files), so a line of our own
@@ -1772,7 +1604,7 @@ static void pad_filter(unsigned long port, XState *st)
         }
     }
     vs_pause_restart_pad(port, st);
-    if (port == 0 && !s_on_drawn && G32(FE_SCREEN) == 4 && getenv("TT_NET_LOBBY")) {   /* (2.1) back from an online game: the title's "press Start" pressed
+    if (port == 0 && !s_on_drawn && G32(FE_SCREEN) == 4 && online_on() && getenv("TT_NET_LOBBY")) {   /* (2.1) back from an online game: the title's "press Start" pressed
         * for the player, on to the main menu and its Online menu (net.c's lobby runs there; at the title it never heard the host) */
         static DWORD t0; DWORD now = GetTickCount(); if (!t0) t0 = now;
         if (now - t0 > 1500u && ((now - t0) / 250u) % 4u == 0u) { st->Gamepad.wButtons |= 0x0010u; st->dwPacketNumber += 0x10000u; } }
@@ -1781,7 +1613,6 @@ static void pad_filter(unsigned long port, XState *st)
         extern volatile int tt_p1_autostick_on; extern volatile int16_t tt_p1_autostick[2];
         if (tt_p1_autostick_on && port < 4 && (port == 0 || port == G32(0x1CB8B4u)) && (G32(0x4AD050u) == 6 || G32(0x4AD050u) == 8)) { st->Gamepad.sThumbLX = tt_p1_autostick[0]; st->Gamepad.sThumbLY = tt_p1_autostick[1]; st->dwPacketNumber += 0x10000u; }
     }
-    if (port < 4 && (port == 0 || port == G32(0x1CB8B4u))) imp_screen(st);
     if (port == 0 || port == G32(0x1CB8B4u)) s_polls++;
     if (prim > 3) prim = 0;
     {
@@ -2582,21 +2413,21 @@ static void pointer_frame(void)
         go_clear(); vs_restart_ask(s_gy >= 58.0f, "click"); return; }
     if (clk && s_shown && inside && coop_paused_now() && s_gy >= 16.0f && s_gy < 100.0f && s_gx >= 120.0f && s_gx < 520.0f) {   /* (1.9.9) co-op's P2 Teleport note */
         go_clear(); coop_tele_toggle("click"); return; }
-    if (diff_here() && s_shown && inside && s_gy >= 396.0f && s_gy < 440.0f) {   /* (1.9.7) the difficulty row: Impossible ours */
-        extern int tt_coop_setting(int i); extern void tt_coop_setting_set(int i, int v); extern void tt_opt_move_sound(void);
-        int imp = tt_coop_setting(6) == 1, over = s_gx >= 460.0f && s_gx < 640.0f;
-        if (over) {
-            if (!imp || G32(MM_OBJ + 0x18) != 2) { G32(MM_OBJ + 0x18) = 2; tt_coop_setting_set(6, 1); s_diff_swoosh = 3; tt_opt_move_sound(); tt_dbg("[MENU] difficulty: Impossible (pointer)\n"); }
-            if (clk) { go_clear(); press(INJ_A); tt_dbg("[MENU] difficulty: Impossible clicked\n"); }
-            return;
+    if (diff_here() && s_shown && inside && s_gy >= 396.0f && s_gy < 440.0f &&
+        s_gx >= 0.0f && s_gx < 640.0f) {
+        extern void tt_opt_move_sound(void);
+        uint32_t choice = (uint32_t)(s_gx * 3.0f / 640.0f);
+        if (moved && G32(MM_OBJ + 0x18) != choice) {
+            G32(MM_OBJ + 0x18) = choice;
+            s_diff_swoosh = (int)choice;
+            tt_opt_move_sound();
         }
-        if (s_gx >= 0.0f && s_gx < 460.0f) {   /* (1.9.9) Easy, Normal, Expert by the pointer too (words centred at 85, 228, 375 -- diff_layout moved them,
-            * and the game's own items no longer took the clicks there: only Impossible answered the mouse, a playtest) */
-            uint32_t k = s_gx < 156.0f ? 0u : s_gx < 301.0f ? 1u : 2u;
-            if (moved && (imp || G32(MM_OBJ + 0x18) != k)) { if (imp) tt_coop_setting_set(6, 0); G32(MM_OBJ + 0x18) = k; s_diff_swoosh = (int)k; tt_opt_move_sound(); if (mouse_log()) tt_dbg("[MOUSE] difficulty: %u (pointer)\n", k); }
-            if (clk) { if (imp) tt_coop_setting_set(6, 0); G32(MM_OBJ + 0x18) = k; go_clear(); press(INJ_A); tt_dbg("[MENU] difficulty %u clicked\n", k); }
-            return;
+        if (clk) {
+            G32(MM_OBJ + 0x18) = choice;
+            go_clear();
+            press(INJ_A);
         }
+        return;
     }
     {   /* our options pages: their own pointer handling (options.c) */
         extern int tt_opt_mouse(float x, float y, int moved, int clk, int down);
@@ -2988,7 +2819,6 @@ void tt_menus_tick(void)
         tt_opt_tick();
     }
     p2_turn_tick();
-    mm_net_tick();
     {   /* the Co-op menu's New Game / Load Game (options.c): Options leaves (B), then on the main menu, under a black
          * cover, that item is pressed with co-op kept on; for New Game the difficulty screen that follows (main menu
          * state 3, its next screen +4 not yet play) gets the co-op Difficulty (+0x18) and Start. The cover goes when
@@ -3040,7 +2870,7 @@ void tt_menus_tick(void)
                 extern volatile int tt_coop_screen_req;
                 s_coop_opening = 0; tt_coop_screen_req = 0; tt_vs_screen_req = 0; tt_coop_menu_on = 0; tt_vs_menu_on = 0;
                 if (G32(MM_OBJ + 0x14) == 2u) G32(MM_OBJ + 0x14) = (uint32_t)s_open_item;
-                tt_dbg("[MENU] %s: the menu stayed, the choice undone\n", s_open_item == ITEM_VS ? "Versus" : "Co-op");
+                tt_dbg("[MENU] %s: the menu stayed, the choice undone\n", "Multiplayer");
             }
         }
     }

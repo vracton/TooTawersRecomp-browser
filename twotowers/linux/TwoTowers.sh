@@ -6,9 +6,7 @@
 # with a file dialog when zenity is installed, otherwise in a terminal.
 # Then starts the game. Arguments are passed on to it.
 #
-#   TwoTowers.sh --launcher   the launcher first: mods (extra heroes, ECTS 2002
-#                             HUD, orange health), language, full screen, frame
-#                             rate, button prompts -- then Play. F5 on the
+#   TwoTowers.sh --launcher   change display or controller prompt settings
 #                             game's main menu comes back here too.
 
 cd "$(dirname "$(readlink -f "$0")")" || exit 1
@@ -56,11 +54,7 @@ fail() {
 # (1.9.9) the launcher: the Windows launcher's settings, for the AppImage and the Linux package (a window with zenity or
 # kdialog, else twotowers-setup's menu in a terminal). Returns when Play is chosen; Quit ends the script.
 get() { v=$(./twotowers-setup get "$1" "$2"); echo "${v:-$3}"; }
-L() { ./twotowers-setup tr "$1"; }   # (the launcher's words in the chosen language: the Windows launcher's own)
-lang_name() {
-    [ "$1" = "en" ] && { echo "English"; return; }
-    n=$(sed -n 's/^name=//p' "lang/$1/info.txt" 2>/dev/null | head -n 1); echo "${n:-$1}"
-}
+L() { printf '%s\n' "$1"; }
 pick() {   # pick <text> <tag> <label> ... : the tag chosen
     t=$1; shift
     if have_gui; then
@@ -81,39 +75,24 @@ Or open a terminal in this folder:
 and run:  ./twotowers-setup"
     fi
     while :; do
-        eh=$(get Mods extra_heroes 0); hud=$(get Mods e3_hud 0); pk=$(get Mods e3_pickups 0)
-        fs=$(get Display fullscreen 0); fps=$(get Display fps 30); pr=$(get Input prompts auto); lg=$(get Language language en)
-        case "$eh" in 1) ehn=$(L "Unlock through Isildur and Orthanc victories (progress counts)");; 2) ehn=$(L "On, unlocked for testing (save not changed)");;
-                      3) ehn=$(L "Extras unlocked from the start (progress counts)");; *) ehn=$(L "Off (four heroes, as retail)");; esac
-        [ "$hud" = 1 ] && hudn=$(L "On (ECTS 2002 demo HUD)") || hudn=$(L "Off (retail HUD)")
-        [ "$pk" = 1 ] && pkn=$(L "On (orange health pickups)") || pkn=$(L "Off (green, as retail)")
+        fs=$(get Display fullscreen 0); fps=$(get Display fps 30); pr=$(get Input prompts auto)
         case "$fs" in 1) fsn=$(L "Full screen (borderless)");; 2) fsn=$(L "Exclusive full screen");; *) fsn=$(L "Windowed");; esac
         case "$fps" in 30) fpsn=$(L "30 fps (as on the Xbox)");; 60) fpsn=$(L "60 fps (experimental)");; unlocked) fpsn=$(L "Unlocked (experimental)");; *) fpsn="$fps fps";; esac
         case "$pr" in xbox) prn=Xbox;; xboxone) prn="Xbox One";; playstation) prn=PlayStation;; keyboard) prn=$(L "Keyboard / mouse (your bound keys)");;
                       *) prn=$(L "Automatic (follows the pad or keys you use)");; esac
         c=$(pick "$(L "Choose a setting to change it, then Play.")" \
             play "▶  $(L Play)" \
-            eh "$(L "Mod: 13 extra heroes"):  $ehn" \
-            hud "$(L "Mod: ECTS 2002 HUD (experimental)"):  $hudn" \
-            pk "$(L "Mod: Orange health pickups (shown in pre-release & making-of videos)"):  $pkn" \
-            lang "$(L "Language (game and launcher):")  $(lang_name "$lg")" \
             fs "$(L "Display mode"):  $fsn" \
             fps "$(L "Frame rate"):  $fpsn" \
             pr "$(L "Button prompts"):  $prn") || exit 0
         case "$c" in
             play|"") return 0;;
-            eh) case "$eh" in 0) n=1;; 1) n=2;; 2) n=3;; *) n=0;; esac; ./twotowers-setup set Mods extra_heroes $n;;
-            hud) [ "$hud" = 1 ] && n=0 || n=1; ./twotowers-setup set Mods e3_hud $n;;
-            pk) [ "$pk" = 1 ] && n=0 || n=1; ./twotowers-setup set Mods e3_pickups $n;;
             fs) case "$fs" in 0) n=1;; 1) n=2;; *) n=0;; esac; ./twotowers-setup set Display fullscreen $n;;
             fps) n=30; set -- 30 60 75 90 100 120 144 165 200 240 300 unlocked 30
                  while [ $# -gt 1 ]; do [ "$1" = "$fps" ] && { n=$2; break; }; shift; done
                  ./twotowers-setup set Display fps $n;;
             pr) case "$pr" in auto) n=xbox;; xbox) n=xboxone;; xboxone) n=playstation;; playstation) n=keyboard;; *) n=auto;; esac
                 ./twotowers-setup set Input prompts $n;;
-            lang) set -- en "English"
-                  for d in lang/*/info.txt; do [ -f "$d" ] || continue; k=${d#lang/}; k=${k%/info.txt}; set -- "$@" "$k" "$(lang_name "$k")"; done
-                  n=$(pick "$(L "Language (game and launcher):")" "$@") && [ -n "$n" ] && ./twotowers-setup set Language language "$n";;
         esac
     done
 }
@@ -143,7 +122,7 @@ if ! ./twotowers-setup status -q; then
 ${msg:-Extraction was cancelled.}"
         fi
         rm -f "$log"
-        LAUNCHER=1   # (the first time: the launcher, where the mods are)
+        LAUNCHER=1   # (the first time: show the launcher)
         # (an AppImage: the menu entry is the AppImage's own, through AppImageLauncher or the like)
         if [ -z "$TT_APPIMAGE_HOME" ] && zenity --question --title="$TITLE" --width=420 \
                --text="The game files are installed.\n\nAdd The Two Towers to your applications menu?" 2>/dev/null; then
@@ -168,17 +147,6 @@ Tip: with zenity on your system (sudo apt install zenity), the game asks for you
 fi
 
 [ "$LAUNCHER" = 1 ] && launcher
-
-# Ultra textures on, and the GLOS69 pack put here but not made ready yet:
-# made ready once (a few minutes)
-if [ "$(./twotowers-setup get Display ultra_textures)" = "1" ] && ./twotowers-setup ultra-needed; then
-    if have_gui; then
-        ./twotowers-setup ultra 2>/dev/null | sed -u -n 's/^PROGRESS \(.*\)/\1/p; s/^\(# .*\)/\1/p' \
-            | zenity --progress --title="$TITLE" --text="Building the Ultra textures (once)..." --percentage=0 --auto-close --width=460 2>/dev/null
-    else
-        ./twotowers-setup ultra | sed -u -n 's/^# //p'
-    fi
-fi
 
 # (2.0.1) the game that opened the launcher (F5) started again -- not always ./twotowers_recomp (a test build beside it)
 GAME_EXE=./twotowers_recomp

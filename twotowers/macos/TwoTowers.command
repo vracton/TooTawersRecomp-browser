@@ -29,11 +29,4 @@ if ! ./twotowers-setup status -q; then
     ./twotowers-setup install "$iso" || fail "The game files could not be installed."
 fi
 
-# Ultra textures on, and the GLOS69 pack put here but not made ready yet:
-# made ready once (a few minutes)
-if [ "$(./twotowers-setup get Display ultra_textures)" = "1" ] && ./twotowers-setup ultra-needed; then
-    echo "Building the Ultra textures from the GLOS69 pack (once; a few minutes)..."
-    ./twotowers-setup ultra | sed -n 's/^# //p'
-fi
-
 exec ./twotowers_recomp "$@"

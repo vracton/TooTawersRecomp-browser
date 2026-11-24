@@ -1,2 +1,0 @@
-name=Tiếng Việt
-rtl=0

@@ -1,2 +1,0 @@
-name=Ænglisc (runstafas)
-rtl=0

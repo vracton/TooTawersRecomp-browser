@@ -1,2 +1,0 @@
-name=Deutsch
-rtl=0

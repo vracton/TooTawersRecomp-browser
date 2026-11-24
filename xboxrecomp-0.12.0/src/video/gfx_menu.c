@@ -84,23 +84,18 @@ static GfxItem s_items[GFX_N] = {
     { "Mouse aiming (ranged)", "mouse_aim", 2, { "On", "Off" }, { "1", "0" },
       "Hold the ranged button and move the mouse to aim" },
     { "Mouse aiming: invert", "mouse_invert", 4, { "Off", "Up / down", "Left / right", "Both" }, { "0", "y", "x", "xy" }, NULL },
-    { "Sauron's sprint", "sprint", 3, { "Press to toggle", "Hold", "Off" }, { "toggle", "hold", "off" },
-      "Extra heroes: Sauron sprints with the left stick click (Shift on the keyboard)" },
+    { 0 },   /* Retired sprint slot. */
     { "Mouse steering (movement)", "mouse_steer", 2, { "Off", "On" }, { "0", "1" },
       "Hold W: he runs the way the mouse pushes (Walk walks)" },
     { "Window size", "window_size", 11, { "Automatic", "1280 x 720", "1280 x 960", "1600 x 900", "1920 x 1080", "1920 x 1200",
       "2560 x 1080", "2560 x 1440", "3440 x 1440", "3840 x 2160", "5120 x 1440" },
       { "", "1280x720", "1280x960", "1600x900", "1920x1080", "1920x1200", "2560x1080", "2560x1440", "3440x1440", "3840x2160", "5120x1440" },
       "Windowed mode" },
-    { "Ultra textures", "ultra_textures", 2, { "Off", "On" }, { "0", "1" },
-      "The high-resolution texture pack (GLOS69 and textures_ultra beside the game)" },
+    { 0 },   /* Retired texture-pack slot. */
     { "Widescreen cutscenes", "wide_scenes", 2, { "Off (4:3)", "On" }, { "0", "1" },
       "On: the in-engine scenes widened too (the sky's edges can show)" },
     { "Full-screen resolution", "fs_resolution", 1, { "The desktop's" }, { "" }, "For exclusive full screen" },
-    { "Mod: ECTS 2002 HUD", "e3_hud", 2, { "Off", "On" }, { "0", "1" },
-      "Portrait, rune orb and EXP readout of the ECTS 2002 demo" },
-    { "Mod: Orange health pickups", "e3_pickups", 2, { "Off", "On" }, { "0", "1" },
-      "Health pickups are orange, as in pre-release and making-of videos" },
+    { 0 }, { 0 },   /* Retired demo HUD and orange pickup slots. */
     /* (1.9.7) the More page */
     { "Colour grading", "colour_look", 4, { "None", "Cinema", "Rich", "Shadow" }, { "original", "film", "vivid", "dark" },
       "Cinema: warm lights, cool shadows. Rich: deeper colour. Shadow: colder and darker" },
@@ -130,7 +125,7 @@ static GfxItem s_items[GFX_N] = {
 static const int s_more_def[GFX_N - GFX_MORE0] = { 0, 3, 0, 1, 0, 0, 3, 3, 4, 2, 0, 0, 0, 1, 0 };
 /* (1.9.7 release) settings taken off the More page: kept at their defaults (HDR off, original texture distance, original
  * damage both ways, the game's own trigger pull), whatever an ini says */
-static int more_forced(int k) { return k == GFX_HDR || k == GFX_HDRPAPER || k == GFX_LOD || k == GFX_DMGTAKEN || k == GFX_DMGENEMY || k == GFX_TRIGGER; }
+static int more_forced(int k) { return k == GFX_HDR || k == GFX_HDRPAPER || k == GFX_LOD || k == GFX_DMGTAKEN || k == GFX_DMGENEMY || k == GFX_TRIGGER || k == GFX_ACHON; }
 /* (also off the page: the stick dead zone -- still read from the ini, [Input] stick_deadzone) */
 static int more_hidden(int k) { return more_forced(k) || k == GFX_DEADZONE; }
 static int more_n(void) { int k, n = 0; for (k = GFX_MORE0; k < GFX_N; k++) n += !more_hidden(k); return n; }
@@ -279,10 +274,10 @@ static void gfx_init(void)
     {
         static const struct { int item; const char *env; } fl[] = {
             { GFX_BRIGHT, "RECOMP_BRIGHTNESS" }, { GFX_SHARP, "RECOMP_SHARPEN" }, { GFX_COLOR, "RECOMP_SATURATION" },
-            { GFX_E3HUD, "TT_E3HUD" }, { GFX_E3PICKUPS, "TT_E3PICKUPS" }, { GFX_PROMPTS, "TT_PROMPTS" },
+            { GFX_PROMPTS, "TT_PROMPTS" },
             { GFX_HUDPOS, "RECOMP_HUD_ANCHOR" }, { GFX_MENUFILL, "RECOMP_MENU_FILL" }, { GFX_MOVIEFILL, "RECOMP_MOVIE_FILL" },
             { GFX_MOUSE, "TT_MENU_MOUSE" }, { GFX_MOUSE_SENS, "TT_MOUSE_SENS" }, { GFX_CURSOR_SIZE, "TT_CURSOR_SIZE" },
-            { GFX_MOUSE_AIM, "TT_MOUSE_AIM" }, { GFX_MOUSE_INVERT, "TT_MOUSE_INVERT" }, { GFX_SPRINT, "TT_SPRINT" }, { GFX_MOUSE_STEER, "TT_MOUSE_STEER" }, { GFX_ULTRA, "TT_ULTRA_TEX" }, { GFX_WIDE_SCENES, "RECOMP_WIDE_SCENES" } };
+            { GFX_MOUSE_AIM, "TT_MOUSE_AIM" }, { GFX_MOUSE_INVERT, "TT_MOUSE_INVERT" }, { GFX_MOUSE_STEER, "TT_MOUSE_STEER" }, { GFX_WIDE_SCENES, "RECOMP_WIDE_SCENES" } };
         int k;
         s_cur[GFX_BRIGHT] = 1;
         s_cur[GFX_MOUSE_SENS] = 2;     /* Normal */
@@ -399,7 +394,7 @@ static void gfx_set(int item, int v)
 int xbox_GfxFind(const char *key)
 {
     int i;
-    for (i = 0; i < GFX_N; i++) if (s_items[i].key && !strcmp(s_items[i].key, key)) return i;
+    for (i = 0; i < GFX_N; i++) if (i != GFX_ACHON && s_items[i].key && !strcmp(s_items[i].key, key)) return i;
     return -1;
 }
 int xbox_GfxItemCount(int id) { gfx_init(); return id >= 0 && id < GFX_N ? s_items[id].n : 0; }
@@ -420,7 +415,7 @@ int xbox_GfxIndex(int id)
 void xbox_GfxSetIndex(int id, int v)
 {
     gfx_init();
-    if (id < 0 || id >= GFX_N) return;
+    if (id < 0 || id >= GFX_N || !s_items[id].n || id == GFX_ACHON) return;
     EnterCriticalSection(&s_lock);
     gfx_set(id, v);
     LeaveCriticalSection(&s_lock);
@@ -478,8 +473,8 @@ extern int xbox_InputKeyDown(int vk);
 
 /* (1.9.1) Sauron's sprint is gone: its item stays (the numbers after it
  * keep their places) but no row shows it */
-static int row_item(int row) { int i = row - 1; return i >= GFX_SPRINT ? i + 1 : i; }
-static int page_rows(int p) { return p == 0 ? GFX_MENU_N : p == 1 ? BIND_N + 2 : p == 3 ? 1 + more_n() : 1 + (s_ach_n ? s_ach_n() : 0); }
+static int row_item(int row) { int i = row - 1; i += i >= GFX_SPRINT; return i + (i >= GFX_ULTRA); }
+static int page_rows(int p) { return p == 0 ? GFX_MENU_N - 1 : p == 1 ? BIND_N + 2 : p == 3 ? 1 + more_n() : 1 + (s_ach_n ? s_ach_n() : 0); }
 
 static void gfx_nav(int dy, int dx)
 {
@@ -906,7 +901,7 @@ static void panel_body(int pw, int ph, int fp, int lh)
             int vis = 0;
             for (i = 0; i < GFX_MENU_N; i++) {
                 int sel;
-                if (i == GFX_SPRINT) continue;
+                if (i == GFX_SPRINT || i == GFX_ULTRA) continue;
                 sel = ++vis == row;
                 if (sel) box(M, y, pw - 2 * M, lh, RGB(70, 52, 22));
                 txt(s_items[i].label, lx, y, vx - lx, lh, DT_LEFT, sel ? selc : parch, sel ? s_font_b : s_font);

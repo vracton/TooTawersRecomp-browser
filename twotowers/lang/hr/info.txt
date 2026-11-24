@@ -1,2 +1,0 @@
-name=Hrvatski
-rtl=0

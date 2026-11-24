@@ -248,7 +248,6 @@ static int arrow_is_his(int sk) { return sk >= 0 && s_skins[sk].nobow && !getenv
  * glow, as Frodo carries it in Balin's Tomb), or 0 */
 static uint32_t weapon_tex2(uint32_t mesh) { return mesh == 0x69DAC4B8u ? 0xDB3B3452u : 0; }
 static char s_ini[600], s_dir[600], s_level_xp[300];
-static int s_on = -1;
 static int s_test_unlock;   /* [Mods] extra_heroes=2 */
 static int s_heroes_mode;
 static int s_guest = -1;       /* the extra hero hero 4 is, or -1 (Isildur) */
@@ -275,27 +274,9 @@ static void paths(void)
 
 int tt_heroes_on(void)
 {
-    if (s_on < 0) {
-        const char *e = getenv("TT_HEROES");
-        paths();
-        s_on = GetPrivateProfileIntA("Mods", "extra_heroes", 0, s_ini);
-        if (e) s_on = atoi(e);
-        /* 2: unlocked for testing (only in memory; the save is not changed) */
-        if (s_on == 2 || getenv("TT_HEROES_UNLOCK")) s_test_unlock = 1;
-        s_heroes_mode = s_on;
-        s_on = s_on != 0;
-        tt_dbg("[HEROES] extra heroes %s\n", s_on ? "on" : "off");
-    }
-    return s_on;
+    return 0;
 }
 
-/* (2.1) online: the Extra heroes mod "on, unlocked for testing" (2) -- set in the ini as the Online menu opens, and kept */
-int tt_heroes_online_ready(void) { tt_heroes_on(); return s_on && s_test_unlock; }
-void tt_heroes_online_set_ini(void)
-{
-    paths();
-    if (GetPrivateProfileIntA("Mods", "extra_heroes", 0, s_ini) != 2) { WritePrivateProfileStringA("Mods", "extra_heroes", "2", s_ini); tt_dbg("[HEROES] online: the Extra heroes mod set to on, unlocked for testing (%s)\n", s_ini); }
-}
 static int skin_by_name(const char *e)
 {
     int i;
@@ -6432,57 +6413,7 @@ static int wop_is_him(void)
 static DWORD WINAPI aw_thread(LPVOID u);
 void tt_heroes_init(void)
 {
-    { int q; for (q = 0; q < 256; q++) s_idmap[q] = (uint8_t)q; }
-    { int q; for (q = 0; q < N_EXTRA; q++) if (q >= (int)(sizeof s_pools / sizeof s_pools[0]) || strcmp(s_pools[q].name, s_skins[q].name)) tt_dbg("[HEROES] *** s_pools[%d] is not %s's: the tables are out of order ***\n", q, s_skins[q].name); }   /* (1.9.9: per-skin tables by index -- a reorder gave Saruman the troll's moves) */
-    {   /* (1.9.2) the files' copies are made in two steps: ours, then the
-         * language's (lang.c), which owns xbox_path_redirect */
-        extern const char *(*tt_heroes_redirect)(const char *xp);
-        extern void tt_lang_init(void);
-        tt_heroes_redirect = redirect;   /* (always: co-op resets per level and may build player 2's level variant; with the mod off only level files are looked at) */
-        tt_lang_init();
-    }
-    if (getenv("TT_ANIMWATCH") || getenv("TT_WOBJWATCH") || getenv("TT_POSLOG") || getenv("TT_WOBJSHOW") || getenv("TT_HPFIND") || getenv("TT_HPFREEZE") || getenv("TT_ANIMCYCLE") || getenv("TT_CYCSLOTS")) CreateThread(NULL, 0, aw_thread, NULL, 0, NULL);
-    if (getenv("TT_GUEST")) s_guest = skin_by_name(getenv("TT_GUEST"));   /* testing: hero 4 is this one */
-    if (getenv("TT_VS_P1SKIN")) s_vsp1 = skin_by_name(getenv("TT_VS_P1SKIN"));   /* testing: Versus on Mount Doom, player 1 a retail hero */
-    if (getenv("TT_FIGDUMP")) {   /* testing: the upgrade figures as heroes/fig_<name>.ppm */
-        int g, k; paths();
-        for (g = 0; g < N_SEL; g++) {
-            uint32_t *im = figure_render(g); char pth[700]; FILE *pf;
-            if (!im) continue;
-            snprintf(pth, sizeof pth, "%s/heroes/fig_%s.ppm", s_dir, s_skins[g].name);
-            if ((pf = fopen(pth, "wb")) != NULL) { fprintf(pf, "P6 128 256 255\n"); for (k = 0; k < 128 * 256; k++) { unsigned char c3[3] = { (unsigned char)(im[k] >> 16), (unsigned char)(im[k] >> 8), (unsigned char)im[k] }; fwrite(c3, 1, 3, pf); } fclose(pf); }
-            free(im);
-        }
-    }
-    if (getenv("TT_FIGSCAN")) {   /* testing: each guest's figure in each of these slots, heroes/figscan_<name>_<slot>.ppm */
-        int g, k; paths();
-        const char *q = getenv("TT_FIGSCAN");
-        while (*q) {
-            int sl = atoi(q); char sv[16];
-            snprintf(sv, sizeof sv, "%d", sl);
-            for (g = 0; g < N_SEL; g++) {
-                uint32_t *im; char pth[700]; FILE *pf;
-                _putenv_s("TT_FIGSLOT", sv);
-                im = figure_render(g);
-                if (!im) continue;
-                snprintf(pth, sizeof pth, "%s/heroes/figscan_%s_%d.ppm", s_dir, s_skins[g].name, sl);
-                if ((pf = fopen(pth, "wb")) != NULL) { fprintf(pf, "P6 128 256 255\n"); for (k = 0; k < 128 * 256; k++) { unsigned char c3[3] = { (unsigned char)(im[k] >> 16), (unsigned char)(im[k] >> 8), (unsigned char)im[k] }; fwrite(c3, 1, 3, pf); } fclose(pf); }
-                free(im);
-            }
-            q = strchr(q, ','); if (!q) break; q++;
-        }
-        _putenv_s("TT_FIGSLOT", "");
-    }
-    if (getenv("TT_GTEX")) s_skins[1].tex = s_skins[0].tex;
-    if (getenv("TT_SWAPMESH")) {   /* testing: Boromir's slot with Gandalf's model (or texture with =2) */
-        if (atoi(getenv("TT_SWAPMESH")) == 2) s_skins[0].tex = s_skins[1].tex;
-        else { s_skins[0].mesh = s_skins[1].mesh; s_skins[0].map = s_skins[1].map; s_skins[0].nmap = s_skins[1].nmap; }
-    }   /* testing: Gandalf in Boromir's texture */
-    if (getenv("TT_UPG_SELFTEST")) {   /* testing: build the four upgrade pictures now */
-        int g, keep = s_guest;
-        for (g = 0; g < N_SEL; g++) { s_guest = g; upg_redirect("\\Device\\CdRom0\\UI\\upgbigi.BFF", "upgbigi.BFF"); upg_redirect("\\Device\\CdRom0\\UI\\endlvl.BFF", "endlvl.BFF"); upg_redirect("\\Device\\CdRom0\\UI\\upgradei.BFF", "upgradei.BFF"); }
-        s_guest = keep;
-    }
+    for (int i = 0; i < 256; i++) s_idmap[i] = (uint8_t)i;
 }
 
 /* testing: TT_CALLTRACE=level -- each function reached through an indirect

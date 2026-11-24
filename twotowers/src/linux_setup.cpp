@@ -12,7 +12,6 @@
 //   twotowers-setup set <section> <key> <value>
 //   twotowers-setup get <section> <key>
 //   twotowers-setup desktop             add the game to the applications menu
-//   twotowers-setup tr <English>        the launcher's words in the chosen language
 //   twotowers-setup                     a small menu in the terminal
 //
 // "install" prints "PROGRESS <0-100>" lines while it extracts (for zenity).
@@ -35,7 +34,6 @@
 #endif
 
 namespace fs = std::filesystem;
-#include "../tools/ultra_textures/ultra_build.h"
 
 static const char *kXbeSha256 = "ae2d1b5304b3e9572339b693a6a45ad0869bdaeec89aae374b5c14feebbb8d30";
 
@@ -390,8 +388,8 @@ static int cmdDesktop()
          "Path=" << dir.string() << "\n"
          "Icon=" << (dir / "twotowers.png").string() << "\n"
          "Terminal=false\nCategories=Game;ActionGame;\n"
-         "Actions=Launcher;\n\n"   // (1.9.9) right-click the entry: the launcher (mods, language, settings) before the game
-         "[Desktop Action Launcher]\nName=Launcher (mods and settings)\n"
+         "Actions=Launcher;\n\n"   // (1.9.9) right-click the entry: the launcher before the game
+         "[Desktop Action Launcher]\nName=Launcher settings\n"
          "Exec=\"" << (dir / "TwoTowers.sh").string() << "\" --launcher\n";
     if (!o) { std::cerr << "Error: cannot write " << (apps / "twotowers-recompiled.desktop").string() << "\n"; return 2; }
     std::cout << "Added to your applications menu: " << (apps / "twotowers-recompiled.desktop").string() << "\n";
@@ -406,7 +404,6 @@ static std::string ask(const std::string &q)
     return trim(a);
 }
 
-static int cmdUltra();
 static int menu()
 {
     for (;;) {
@@ -416,11 +413,7 @@ static int menu()
                      "  2) Use an extracted disc folder\n"
                      "  3) Full screen at start: " << iniGet("Display", "fullscreen", "0") << "\n"
                      "  4) Frame rate: " << iniGet("Display", "fps", "30") << "  (30 / 60 / 75 / 90 / 100 / 120 / 144 / 165 / 200 / 240 / 300 / unlocked; above 30 is experimental)\n"
-                     "  5) ECTS 2002 HUD mod: " << iniGet("Mods", "e3_hud", "0") << "\n"
                      "  6) Button prompts: " << iniGet("Input", "prompts", "auto") << "  (auto / xbox / xboxone / playstation / keyboard)\n"
-                     "  7) Extra heroes mod: Boromir, Gandalf, Frodo, Lurtz, Elrond, Uruk-hai, Sauron\n     (0 off / 1 on, unlock with Isildur and Orthanc / 2 on, unlocked for testing / 3 on, unlocked from the start): " << iniGet("Mods", "extra_heroes", "0") << "\n"
-                     "  o) Orange health pickups (ECTS 2002): " << iniGet("Mods", "e3_pickups", "0") << "\n"
-                     "  l) Language: " << iniGet("Language", "language", "en") << "  (en, or a folder in lang/)\n"
                      "  8) Add to the applications menu\n"
                      "  9) Play\n"
                      "  q) Quit\n";
@@ -437,37 +430,13 @@ static int menu()
                 iniSet("Display", "fps", seq[k >= 11 ? 0 : k + 1]);
             }
         }
-        else if (c == "5") iniSet("Mods", "e3_hud", iniGet("Mods", "e3_hud", "0") == "1" ? "0" : "1");
         else if (c == "6") {
             std::string p = lower(iniGet("Input", "prompts", "auto"));
             iniSet("Input", "prompts", p == "auto" ? "xbox" : p == "xbox" ? "xboxone" : p == "xboxone" ? "playstation" : p == "playstation" ? "keyboard" : "auto");
         }
-        else if (c == "7") {
-            std::string v = iniGet("Mods", "extra_heroes", "0");
-            iniSet("Mods", "extra_heroes", v == "0" ? "1" : v == "1" ? "2" : v == "2" ? "3" : "0");   // 2: unlocked for testing; 3: from the start (progress counts)
-        }
-        else if (c == "o" || c == "O") iniSet("Mods", "e3_pickups", iniGet("Mods", "e3_pickups", "0") == "1" ? "0" : "1");
-        else if (c == "l" || c == "L") {
-            std::vector<std::string> codes{"en"};
-            std::error_code ec;
-            for (auto &e : fs::directory_iterator(exeDir() / "lang", ec))
-                if (fs::exists(e.path() / "info.txt")) codes.push_back(e.path().filename().string());
-            std::sort(codes.begin() + 1, codes.end());
-            for (size_t i = 0; i < codes.size(); i++) {
-                std::string name = codes[i] == "en" ? "English" : "";
-                std::ifstream in(exeDir() / "lang" / codes[i] / "info.txt");
-                std::string ln;
-                while (std::getline(in, ln)) if (ln.compare(0, 5, "name=") == 0) name = ln.substr(5);
-                std::cout << "   " << codes[i] << "  " << name << "\n";
-            }
-            std::string v = ask("Language code: ");
-            if (std::find(codes.begin(), codes.end(), v) != codes.end()) iniSet("Language", "language", v);
-            else if (!v.empty()) std::cout << "No such language.\n";
-        }
         else if (c == "8") cmdDesktop();
         else if (c == "9") {
             if (cmdStatus(true) != 0) { std::cout << "Install the game files first.\n"; continue; }
-            if (iniGet("Display", "ultra_textures", "0") == "1" && ultra_build::needed(exeDir())) cmdUltra();
             fs::path exe = exeDir() / "twotowers_recomp";
             if (const char *ge = getenv("TT_GAME_EXE")) { if (access(ge, F_OK) == 0 && access(ge, X_OK) != 0) { struct stat st_; if (stat(ge, &st_) == 0) chmod(ge, st_.st_mode | S_IXUSR); } if (access(ge, X_OK) == 0) exe = ge; unsetenv("TT_GAME_EXE"); }   // (2.0.1) the game that opened the launcher
             if (chdir(exeDir().c_str()) == 0) execl(exe.c_str(), exe.c_str(), (char *)nullptr);
@@ -478,45 +447,6 @@ static int menu()
     }
 }
 
-// Ultra textures: the GLOS69 pack (downloaded separately) made into the
-// files the game reads, once (tools/ultra_textures/ultra_build.h).
-// "PROGRESS n" and "# text" lines, as install's, for a progress window.
-static int cmdUltra()
-{
-    std::string err;
-    int last = -1;
-    int r = ultra_build::build(exeDir(), [&](double f, const std::string &what) {
-        int p = (int)(f * 100);
-        if (p != last) { last = p; std::cout << "PROGRESS " << p << "\n# Ultra textures (once): " << what << std::endl; }
-    }, err);
-    if (r) std::cerr << "Ultra textures: " << err << "\n";
-    return r;
-}
-
-// (1.9.9) the launcher's words in the chosen language: lang/<code>/text.txt's "L:<English>\t<translation>" (the Windows
-// launcher's own), else the English
-static int cmdTr(const std::string &en)
-{
-    std::string code = iniGet("Language", "language", "en"), ln, out = en;
-    if (!code.empty() && code != "en") {
-        std::ifstream in(exeDir() / "lang" / code / "text.txt", std::ios::binary);
-        std::string key = "L:" + en + "\t";
-        while (std::getline(in, ln)) {
-            if (!ln.empty() && ln.back() == '\r') ln.pop_back();
-            if (ln.compare(0, key.size(), key) != 0) continue;
-            std::string v = ln.substr(key.size());
-            out.clear();
-            for (size_t i = 0; i < v.size(); i++) {
-                if (v[i] == '\\' && i + 1 < v.size()) { char c = v[++i]; out += c == 'n' ? '\n' : c == 't' ? '\t' : c; }
-                else out += v[i];
-            }
-            break;
-        }
-    }
-    std::cout << out << "\n";
-    return 0;
-}
-
 int main(int argc, char **argv)
 {
     std::string c = argc > 1 ? argv[1] : "";
@@ -524,12 +454,9 @@ int main(int argc, char **argv)
     if (c == "install" && argc > 2) return cmdInstall(argv[2]);
     if (c == "folder" && argc > 2) return cmdFolder(argv[2]);
     if (c == "desktop") return cmdDesktop();
-    if (c == "tr" && argc > 2) return cmdTr(argv[2]);
-    if (c == "ultra") return cmdUltra();
-    if (c == "ultra-needed") return ultra_build::needed(exeDir()) ? 0 : 1;   // 0: the pack is there and not built yet
     if (c == "set" && argc > 4) return iniSet(argv[2], argv[3], argv[4]) ? 0 : 1;
     if (c == "get" && argc > 3) { std::cout << iniGet(argv[2], argv[3], "") << "\n"; return 0; }
     if (c.empty()) return menu();
-    std::cerr << "usage: twotowers-setup [status | install <iso> | folder <dir> | desktop | ultra | ultra-needed | set <sec> <key> <val> | get <sec> <key>]\n";
+    std::cerr << "usage: twotowers-setup [status | install <iso> | folder <dir> | desktop | set <sec> <key> <val> | get <sec> <key>]\n";
     return 2;
 }

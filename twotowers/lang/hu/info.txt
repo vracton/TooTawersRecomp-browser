@@ -1,2 +1,0 @@
-name=Magyar
-rtl=0

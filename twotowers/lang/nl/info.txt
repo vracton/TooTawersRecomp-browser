@@ -1,2 +1,0 @@
-name=Nederlands
-rtl=0

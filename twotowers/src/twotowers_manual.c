@@ -183,9 +183,6 @@ void sub_000E3AF0(void)
 extern void sub_000CF450_gen(void);
 void sub_000CF450(void)
 {
-    extern int tt_e3hud_predraw(void);
-    extern void tt_e3hud_postdraw(void);
-    int on = tt_e3hud_predraw();
     { extern void tt_framelog(void); tt_framelog(); }   /* (testing: TT_HEADLOG) */
     { extern void tt_coopprobe_frame(void); tt_coopprobe_frame(); }   /* (coop-anything research probe: TT_COOPPROBE) */
     { extern void tt_coop_frame(void); tt_coop_frame(); }   /* (coop-anything prototype: TT_COOP) */
@@ -193,7 +190,6 @@ void sub_000CF450(void)
     { extern void tt_coop_hud_pre(void); tt_coop_hud_pre(); }   /* (coop-anything: player 2's health sword, after the E3 HUD took its slot) */
     sub_000CF450_gen();
     { extern void tt_coop_hud_post(void); tt_coop_hud_post(); }
-    if (on) tt_e3hud_postdraw();
 }
 /* 0x0008FB60 (thiscall on an actor): "does the player need a power-up" --
  * the level scripts drop health power-ups when it says yes. TT_FORCE_PICKUPS
@@ -213,8 +209,6 @@ void sub_0008FB60(void)
 extern void sub_000CCA50_gen(void);
 void sub_000CCA50(void)
 {
-    extern void tt_e3hud_prehud(void);
-    tt_e3hud_prehud();
     sub_000CCA50_gen();
 }
 
@@ -2947,7 +2941,9 @@ extern unsigned coop_herohits[2];
 /* co-op on: TT_COOP (testing: from the start, for every level) or the main menu's Co-op (menus.c sets tt_coop_menu_on
  * when it is chosen, clears it for a solo New Game or Load Game). Off: every co-op hook stands aside (solo as retail). */
 volatile int tt_coop_menu_on;
-static int coop_mode(void) { static int m = -1; if (m < 0) { const char *v = getenv("TT_COOP"); m = !v ? 0 : !strcmp(v, "ally") ? 2 : !strcmp(v, "clone") ? 3 : 1; } return m ? m : tt_coop_menu_on ? 3 : 0; }
+static int coop_mode(void) {
+    return 0;
+}
 int tt_coop_enter_weapon(uint32_t self); static int coop_nx(void); static void coop_px_hud_frame(void); static int coop_slot_for(uint32_t self); static uint32_t coop_hero_n(int w); static int coop_hero_down_n(int w); static int coop_x_up_any(void); static int coop_slot_for_src(uint32_t src); int coop_slot_of(uint32_t a); uint32_t coop_slot_actor(int k); void coop_slot_peek(int k, const void *p, void *out, uint32_t n); int tt_coop_player_of(uint32_t a); static void coop_slot_fresh(int k);   /* (2.1, coopslot.h) */
 int tt_coop_active(void) { return coop_mode() != 0; }
 /* ---- (1.9.7) Versus: the co-op's second hero against player 1 ----
@@ -2955,7 +2951,9 @@ int tt_coop_active(void) { return coop_mode() != 0; }
  * level's enemies and story scripts are kept out, and rounds are played to a best of three. On from the main menu's
  * Versus (menus.c, tt_vs_menu_on) or TT_VERSUS=1 (testing, with TT_COOP=clone). */
 extern volatile int tt_vs_menu_on;
-int tt_vs_on(void) { static int e = -1; if (e < 0) e = getenv("TT_VERSUS") != NULL; return coop_mode() == 3 && (e || tt_vs_menu_on); }
+int tt_vs_on(void) {
+    return 0;
+}
 /* the Co-op Options (options.c): 0 difficulty (easy, medium, hard), 1 player icons, 2 camera zoom (off, normal, wide) */
 extern int tt_coop_setting(int i);
 /* a downed hero's wait (ms): TT_COOP_RESPAWN, else by the difficulty -- easy 15 s, medium 30 s, hard 45 s */
@@ -3236,7 +3234,9 @@ static void coop_p2_weapon_ids(const char *when)
             if (r) { uint32_t q; MEM32(w + 0x2FC) = MEM32(r + 0x28); MEM32(w + 0x300) = MEM32(r + 0x28); MEM32(w + 0x374) = MEM32(r + 0x24); for (q = 0; q < 6; q++) MEM32(w + 0x37C + q * 4) = MEM32(r + 0x2C + q * 4); if (!MEM32(w + 0x378)) MEM32(w + 0x378) = 1u; } }
     }
 }
-int tt_net_lockstep(void) { static int v = -1; extern int tt_net_on(void); if (v < 0) v = getenv("TT_LOCKSTEP") != NULL; return v || tt_net_on(); }   /* (2.1) online play: every machine the same game */
+int tt_net_lockstep(void) {
+    return 0;
+}   /* (2.1) online play: every machine the same game */
 static uint32_t coop_now(void) { return tt_sim_tick(); }   /* (2.1: lockstep -- the game's own clock, the same on every machine) */
 
 /* -- player 2's pad -- */
@@ -4518,7 +4518,9 @@ static uint8_t coop_s1[0x800]; COOP_PS uint8_t coop_s2[0x800];
  * rating), at +0x400 of each state: whatever runs in player 2's context uses his own copy (set at the take-over) */
 uint32_t coop_rec_addr;
 static void coop_blk_off(uint32_t a) { uint32_t i; for (i = 0; i < COOP_NBLK; i++) if (coop_blk[i].a == a) coop_blk[i].n = 0; }
-int tt_coop_percam(void) { static int v = -1; extern int tt_net_on(void); if (v < 0) v = getenv("TT_COOP_PERCAM") != NULL; return v || (tt_net_on() && !tt_vs_on()); }   /* (2.1) each player his own camera (online play) */
+int tt_coop_percam(void) {
+    return 0;
+}   /* (2.1) each player his own camera (online play) */
 static void coop_blk_opts(void) { static int done; if (!done) { done = 1; if (!tt_coop_percam()) coop_blk_off(0x43B164u); if (getenv("TT_COOP_NOCOMBOSWAP")) coop_blk_off(0x43B264u);
     if (getenv("TT_COOP_NOPERFSWAP")) { coop_blk_off(0x43B240u); coop_blk_off(0x43B25Cu); coop_blk_off(0x43B3DAu); }
     if (getenv("TT_COOP_NOPFXSWAP")) { coop_blk_off(0x43B22Cu); coop_blk_off(0x43B248u); } } }   /* (test: those shared, as before) */
@@ -14607,7 +14609,6 @@ extern void sub_0003F9A0_gen(void);
 void sub_0003F9A0(void)
 {
     uint32_t sc = ecx, w; float dt, k, sp0;
-    if (MEM32(esp) == 0x000710E1u && sc >= 0x10000u) { extern void tt_credits_music_tick(void); tt_credits_music_tick(); }   /* (1.9.9: the credits' second song) */
     if (MEM32(esp) != 0x000710E1u || sc < 0x10000u || getenv("TT_CREDITS_PERFRAME")) { sub_0003F9A0_gen(); return; }
     w = MEM32(0x4B8BA0u); memcpy(&dt, &w, 4);
     k = dt * 30.0f; if (!(k > 0.02f)) k = 0.02f; if (k > 4.0f) k = 4.0f;
@@ -14697,12 +14698,7 @@ extern void sub_000840C0_gen(void); void sub_000840C0(void) { int sw = tt_coop_e
  * its Difficulty (Impossible), there on top of the co-op's own guard (tt_coop_p1_post) */
 int tt_impossible(void)
 {
-    extern int tt_coop_setting(int i);
-    if (tt_vs_on()) return 0;
-    if (getenv("TT_IMPOSSIBLE_FORCE")) return 1;
-    if (coop_mode() && !getenv("TT_COOP_SOLODIFF")) return tt_coop_setting(0) == 3;   /* co-op: its own Difficulty only -- the solo game's Impossible
-        * (General Options, the New Game's screen) turned it on in co-op too (a playtest asked them apart) */
-    return tt_coop_setting(6) == 1 || (coop_mode() && tt_coop_setting(0) == 3);
+    return 0;
 }
 /* the game's difficulty (0x4AB69C: 0 Easy, 1 Normal, 2 Expert; set by 0xD2380, asked by 0xD2390, and by 0xD23A0 / 0xD23B0
  * through their tables at 0x1BB2B8 / 0x1BB2C4) is the solo game's: the New Game's screen, General Options, the save. The
@@ -15271,7 +15267,7 @@ void coop_level_reset(void)
         memcpy(&coop_kept_p2_90, coop_s2 + 0x400 + 0x90, 4); coop_kept_p1_90 = MEMF(coop_rec_addr + 0x90); coop_kept_level = MEM32(0x1BB2A4u); coop_kept = 1;
         memcpy(coop_kept_p2blk, coop_s2 + 0x400 + 0x94, 32);
         tt_dbg("[COOPEXP] level ends or restarts: level experience player 1 %.0f, player 2 %.0f (level %u)\n", coop_kept_p1_90, coop_kept_p2_90, coop_kept_level); }
-    if (getenv("TT_COOP_RESPAWNID")) {   /* bot test: start the level from a checkpoint (the respawn id @SetRespawnId keeps at 0x1BB354) */
+    if (coop_mode() && getenv("TT_COOP_RESPAWNID")) {   /* bot test: start the level from a checkpoint (the respawn id @SetRespawnId keeps at 0x1BB354) */
         static int done; if (!done) { done = 1; MEM32(0x1BB354u) = (uint32_t)atoi(getenv("TT_COOP_RESPAWNID")); tt_dbg("[CHECKPT] test: respawn id set to %d\n", (int32_t)MEM32(0x1BB354u)); } }
     coop_p2 = coop_p2_ally = coop_p2_t0 = 0; coop_depth = 0; coop_level_n++; { extern void coop_oc_reset(void); coop_oc_reset(); }
     coop_world = coop_rec = coop_key = coop_last_char = coop_hero_sel = coop_twin = coop_first_char = 0;

@@ -33,9 +33,6 @@ static void twotowers_write_default_ini(void)
           "[Paths]\n"
           "; extracted disc folder (contains default.xbe); empty = game_files beside the exe\n"
           "game_dir=\n"
-          "\n[Language]\n"
-          "; the game's and the launcher's language: en, or a folder name in lang\\ (fr, de, es, ja, ru, ...)\n"
-          "language=en\n"
           "\n[Display]\n"
           "; 1 = show the game's framebuffer in a window (xboxrecomp RECOMP_FB_WINDOW)\n"
           "window=1\n"
@@ -59,10 +56,6 @@ static void twotowers_write_default_ini(void)
           "fs_resolution=\n"
           "; window size in windowed mode, e.g. 1920x1080; empty = automatic\n"
           "window_size=\n"
-          "; 1 = Ultra textures: sharper menus, level select and HUD, and with the GameCube high-resolution\n"
-          ";   texture pack (its GLOS69 folder, downloaded separately, put beside the game) every texture.\n"
-          ";   The launcher makes the pack ready once. Needs a graphics card with BC7 textures\n"
-          "ultra_textures=0\n"
           "; 1 = the in-engine cutscenes widescreen too (0 = 4:3 with side bars: their skies were made for 4:3)\n"
           "wide_scenes=0\n"
           "; shape of the picture: 4:3 (original), 16:9, 16:10, 21:9, 32:9 or a number such as 2.37.\n"
@@ -95,14 +88,6 @@ static void twotowers_write_default_ini(void)
           "sharpening=0\n"
           "; colour saturation: 1 (original), 1.25 (vivid) or 0.8 (muted)\n"
           "colour=1\n"
-          "\n[Mods]\n"
-          "; 1 = the HUD of the ECTS 2002 demo (experimental): character portrait on the health sword, rune orb\n"
-          ";     showing your combo, EXP readout, blue experience gauge\n"
-          "e3_hud=0\n"
-          "; 1 = orange health pickups, as shown in pre-release and making-of videos\n"
-          "e3_pickups=0\n"
-          "; extra pickup texture hashes for e3_pickups (hex, comma separated)\n"
-          "e3_pickup_textures=\n"
           "\n[Input]\n"
           "; 1 = keyboard and mouse act as controller 1. Controllers always work (Xbox pads;\n"
           ";   PlayStation 3/4/5 and other pads too, with SDL2.dll beside the game on Windows)\n"
@@ -165,20 +150,20 @@ static void twotowers_write_default_ini(void)
 /* (1.9.7) the F10 menu's More page: [Display], [Gameplay], [Input] or [Window] */
 static const char *tt_more_section(const char *key)
 {
-    if (!strcmp(key, "damage_taken") || !strcmp(key, "enemy_damage") || !strcmp(key, "achievements")) return "Gameplay";
+    if (!strcmp(key, "damage_taken") || !strcmp(key, "enemy_damage")) return "Gameplay";
     if (!strcmp(key, "vibration") || !strcmp(key, "stick_deadzone") || !strcmp(key, "trigger_threshold")) return "Input";
     if (!strcmp(key, "pause_unfocused") || !strcmp(key, "mute_unfocused")) return "Window";
     return "Display";
 }
 static const char *const tt_more_keys[] = { "colour_look", "look_strength", "movie_sharpening",
-    "vibration", "stick_deadzone", "pause_unfocused", "mute_unfocused", "achievements", "fps_counter" };   /* (2.1: the FPS counter, [Display]) (1.9.7 release: HDR, texture distance, damage and trigger pull taken off) */
+    "vibration", "stick_deadzone", "pause_unfocused", "mute_unfocused", "fps_counter" };   /* (2.1: the FPS counter, [Display]) (1.9.7 release: HDR, texture distance, damage and trigger pull taken off) */
 static void tt_gfx_save(const char *key, const char *value)
 {
     {   int k; for (k = 0; k < (int)(sizeof tt_more_keys / sizeof tt_more_keys[0]); k++) if (!strcmp(key, tt_more_keys[k])) {
             WritePrivateProfileStringA(tt_more_section(key), key, value, g_ini_path);
             if (!strcmp(key, "stick_deadzone")) _putenv_s("RECOMP_STICK_DEADZONE", value);
             return; } }
-    WritePrivateProfileStringA(!strncmp(key, "e3_", 3) ? "Mods" : (!strcmp(key, "prompts") || !strncmp(key, "menu_mouse", 10) || !strncmp(key, "mouse_", 6) || !strcmp(key, "cursor_size") || !strcmp(key, "sprint") || !strcmp(key, "mouse_steer")) ? "Input" : "Display",
+    WritePrivateProfileStringA((!strcmp(key, "prompts") || !strncmp(key, "menu_mouse", 10) || !strncmp(key, "mouse_", 6) || !strcmp(key, "cursor_size") || !strcmp(key, "sprint") || !strcmp(key, "mouse_steer")) ? "Input" : "Display",
                                key, value, g_ini_path);
 }
 /* ... and its control bindings to [Controls]. */
@@ -267,22 +252,6 @@ static void twotowers_setup_paths_and_log(void)
             _putenv_s("RECOMP_FS_RES", v);
         if (!getenv("RECOMP_WINDOW_SIZE") && GetPrivateProfileStringA("Display", "window_size", "", v, sizeof v, g_ini_path) && v[0])
             _putenv_s("RECOMP_WINDOW_SIZE", v);
-        if (!getenv("RECOMP_ULTRA_ROOT")) _putenv_s("RECOMP_ULTRA_ROOT", g_exe_dir);   /* (Ultra textures: the pack beside the game) */
-        if (!getenv("RECOMP_ULTRA_BUILDER")) {   /* (1.9: the GLOS69 pack made ready when Ultra textures are turned on in the game) */
-            char b[900];
-#ifdef _WIN32
-            snprintf(b, sizeof b, "\"%s\\The Two Towers Recompiled.exe\" --build-ultra", g_exe_dir);
-#else
-            snprintf(b, sizeof b, "\"%s/twotowers-setup\" ultra", g_exe_dir);
-#endif
-            _putenv_s("RECOMP_ULTRA_BUILDER", b);
-        }
-        if (!getenv("RECOMP_ULTRA_SKIP")) {   /* (Ultra textures leave the health pickup as it is: the orange pickups mod recolours it) */
-            char sk[300] = "71C950C7", ex[256] = "";
-            GetPrivateProfileStringA("Mods", "e3_pickup_textures", "", ex, sizeof ex, g_ini_path);
-            if (ex[0]) { strncat(sk, ",", sizeof sk - strlen(sk) - 1); strncat(sk, ex, sizeof sk - strlen(sk) - 1); }
-            _putenv_s("RECOMP_ULTRA_SKIP", sk);
-        }
         if (!getenv("RECOMP_ASPECT") && GetPrivateProfileStringA("Display", "aspect", "4:3", v, sizeof v, g_ini_path) && v[0]) {
             float a = 0, x = 0, y = 0;
             char num[32];
@@ -311,15 +280,14 @@ static void twotowers_setup_paths_and_log(void)
         {
             static const char *map[][3] = {
                 { "Display", "brightness", "RECOMP_BRIGHTNESS" }, { "Display", "sharpening", "RECOMP_SHARPEN" },
-                { "Display", "colour", "RECOMP_SATURATION" }, { "Mods", "e3_hud", "TT_E3HUD" },
-                { "Mods", "e3_pickups", "TT_E3PICKUPS" }, { "Mods", "e3_pickup_textures", "TT_E3PICKUP_TEX" },
+                { "Display", "colour", "RECOMP_SATURATION" },
                 { "Input", "prompts", "TT_PROMPTS" }, { "Input", "ps_pad", "TT_PS_PAD" },
                 { "Display", "hud", "RECOMP_HUD_ANCHOR" },
                 { "Display", "menu_fill", "RECOMP_MENU_FILL" }, { "Display", "movie_fill", "RECOMP_MOVIE_FILL" },
                 { "Input", "menu_mouse", "TT_MENU_MOUSE" }, { "Input", "mouse_sensitivity", "TT_MOUSE_SENS" },
                 { "Input", "cursor_size", "TT_CURSOR_SIZE" }, { "Input", "mouse_aim", "TT_MOUSE_AIM" },
-                { "Input", "mouse_invert", "TT_MOUSE_INVERT" }, { "Input", "sprint", "TT_SPRINT" }, { "Input", "mouse_steer", "TT_MOUSE_STEER" },
-                { "Display", "ultra_textures", "TT_ULTRA_TEX" }, { "Display", "wide_scenes", "RECOMP_WIDE_SCENES" } };
+                { "Input", "mouse_invert", "TT_MOUSE_INVERT" }, { "Input", "mouse_steer", "TT_MOUSE_STEER" },
+                { "Display", "wide_scenes", "RECOMP_WIDE_SCENES" } };
             int k;
             for (k = 0; k < (int)(sizeof map / sizeof map[0]); k++)
                 if (!getenv(map[k][2]) && GetPrivateProfileStringA(map[k][0], map[k][1], "", v, sizeof v, g_ini_path) && v[0])
@@ -336,10 +304,6 @@ static void twotowers_setup_paths_and_log(void)
     {
         extern void xbox_GfxSetSaveHandler(void (*fn)(const char *key, const char *value));
         xbox_GfxSetSaveHandler(tt_gfx_save);
-    }
-    {
-        extern void tt_e3hud_init(void);
-        tt_e3hud_init();            /* the E3 HUD / power-up mods (off unless enabled) */
     }
     {
         /* [Controls] kb_<action>= / pad_<action>= (written by the launcher's

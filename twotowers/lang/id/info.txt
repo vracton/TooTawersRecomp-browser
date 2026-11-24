@@ -1,2 +1,0 @@
-name=Bahasa Indonesia
-rtl=0

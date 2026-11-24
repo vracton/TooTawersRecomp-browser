@@ -1337,7 +1337,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     { extern long long g_cpustat_tid; g_cpustat_tid = (long long)syscall(SYS_gettid); }
 #endif
     { extern void tt_fps_init(void); tt_fps_init(); }
-    { extern void tt_lang_init(void); tt_lang_init(); }   /* (1.9.2) the language: before the game opens a file */
+    { extern void tt_retail_file_hooks_init(void); tt_retail_file_hooks_init(); }
     fflush(stdout);
 
     xbe_entry_point();

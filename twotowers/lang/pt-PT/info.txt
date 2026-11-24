@@ -1,2 +1,0 @@
-name=Português (Portugal)
-rtl=0

@@ -1,2 +1,0 @@
-name=Cymraeg
-rtl=0

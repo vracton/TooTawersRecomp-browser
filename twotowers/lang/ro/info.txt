@@ -1,2 +1,0 @@
-name=Română
-rtl=0

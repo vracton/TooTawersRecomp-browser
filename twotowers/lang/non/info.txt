@@ -1,2 +1,0 @@
-name=Norrœnt mál
-rtl=0

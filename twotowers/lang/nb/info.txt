@@ -1,2 +1,0 @@
-name=Norsk (bokmål)
-rtl=0
