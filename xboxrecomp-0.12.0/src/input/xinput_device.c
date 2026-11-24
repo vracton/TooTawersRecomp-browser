@@ -1264,7 +1264,7 @@ int xbox_InputKeyDown(int vk) { return key_down(vk) ? 1 : 0; }
  * J/K/L/I are the face buttons laid out like the pad (J=X left, K=A bottom,
  * L=B right, I=Y top; left click = A, right click = X), arrows = d-pad,
  * numpad 8/4/2/6 = right stick, F/R = left/right trigger, Z/C = white/black,
- * Enter or Esc = Start, Backspace or Tab = Back, Shift / middle click = the
+ * Enter = Start, Backspace or Esc = Back, Shift / middle click = the
  * left / right stick click.
  *
  * "classic" (RECOMP_KB_LAYOUT=classic, ini [Input] layout=classic): the

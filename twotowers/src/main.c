@@ -1338,6 +1338,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 #endif
     { extern void tt_fps_init(void); tt_fps_init(); }
     { extern void tt_retail_file_hooks_init(void); tt_retail_file_hooks_init(); }
+    { extern void tt_prompts_init(void); tt_prompts_init(); }
     fflush(stdout);
 
     xbe_entry_point();

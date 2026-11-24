@@ -94,7 +94,7 @@ static void twotowers_write_default_ini(void)
           "keyboard=1\n"
           "; wasd    = W/A/S/D move, left click or K or Space = A, right click or J = X,\n"
           ";           L = B, I = Y, F/R = left/right trigger, Z/C = white/black,\n"
-          ";           Enter or Esc = Start, Backspace or Tab = Back, arrows = d-pad,\n"
+          ";           Enter = Start, Backspace or Esc = Back, arrows = d-pad,\n"
           ";           numpad 8/4/2/6 = right stick, Shift / middle click = stick clicks\n"
           ";           B (held) = walk instead of run\n"
           "; classic = Z/X/A/S = A/B/X/Y, numpad = left stick, I/J/K/L = right stick,\n"

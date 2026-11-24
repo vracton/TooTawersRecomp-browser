@@ -486,12 +486,8 @@ static const char *pr_pad_word(int src, int kind)
     return kind == 3 ? x1[src] : xb[src];
 }
 /* the text with the keys: {n} action n's first key (and a mouse button, if one).
- * (1.9.2) Built in the game's own character units, in the chosen language:
- * the template, the button and key words all through tt_tr16 (lang.c), which
- * gives the English as it is when no language is chosen. */
+ * The Xbox font uses the game's own character units. */
 extern int tt_tr16(const char *en, uint16_t *out, int max);
-extern int tt_lang_game16(const uint16_t *en, int n, const uint16_t **out);
-extern int tt_lang_on(void);
 static int s_kb_txt_pad;   /* kb_txt_make for the controller: its bound buttons' names */
 static int s_kb_short;     /* (too long for its place) 1: "Enter / Left Click", 2: the first key only */
 #define KB_U 256
@@ -539,17 +535,9 @@ static int kb_txt_make(const char *tmpl, uint16_t *out, int max)
     out[o] = 0;
     return o;
 }
-/* the game's words for a hint, in its units: the language's, or the English */
-static int kb_orig(int which, uint16_t *o, int max)
+static int kb_orig(int which, uint16_t *out, int max)
 {
-    const char *en = s_kb_txt[which].orig;
-    const uint16_t *tr;
-    int n = 0, m;
-    for (; en[n] && n < max - 1; n++) o[n] = (uint8_t)en[n];
-    m = tt_lang_game16(o, n, &tr);
-    if (m > 0) { n = m < max - 1 ? m : max - 1; memcpy(o, tr, 2 * (size_t)n); }
-    o[n] = 0;
-    return n;
+    return tt_tr16(s_kb_txt[which].orig, out, max);
 }
 static int kb_txt_is(uint32_t at, const uint16_t *s, int n)
 {
@@ -602,7 +590,7 @@ static DWORD WINAPI kb_scan_thread(LPVOID arg)
 static void kb_txt_apply(int keys)   /* 0 the game's words, 1 the keys', 2 the controller's buttons as bound */
 {
     static DWORD scanned;
-    int i, ok = 0, extra = tt_lang_on() ? 47 : 0;   /* (a language's tables have room after each string: lang.c) */
+    int i, ok = 0;
     if (getenv("TT_KB_NOTEXT")) return;
     if (!s_kb_orig_ok) { for (i = 0; i < KB_TXT_N; i++) s_kb_orig[i].n = kb_orig(i, s_kb_orig[i].u, KB_U); s_kb_orig_ok = 1; }
     /* still where they were? */
@@ -640,11 +628,11 @@ static void kb_txt_apply(int keys)   /* 0 the game's words, 1 the keys', 2 the c
         s_kb_txt_pad = keys == 2;
         if (keys) n = kb_txt_make(keys == 2 ? t->pad : t->kb, buf, KB_U);
         else { n = room; memcpy(buf, s_kb_orig[w].u, 2 * (size_t)n); }
-        for (s_kb_short = 1; keys == 1 && n > room + extra && s_kb_short <= 2; s_kb_short++)
+        for (s_kb_short = 1; keys == 1 && n > room && s_kb_short <= 2; s_kb_short++)
             n = kb_txt_make(t->kb, buf, KB_U);   /* (shorter: the mouse button's short name, then the key alone) */
         s_kb_short = 0;
         s_kb_txt_pad = 0;
-        if (n > room + extra) { n = room; memcpy(buf, s_kb_orig[w].u, 2 * (size_t)n); }   /* (too long for its place: as it was) */
+        if (n > room) { n = room; memcpy(buf, s_kb_orig[w].u, 2 * (size_t)n); }   /* (too long for its place: as it was) */
         kb_txt_put(at, buf, n, room);
         memcpy(s_kb_last[i], buf, 2 * (size_t)n); s_kb_last_n[i] = n;
     }

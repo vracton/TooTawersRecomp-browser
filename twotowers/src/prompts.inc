@@ -7,8 +7,7 @@
  * player 1) they are redrawn as they are decoded, in the PlayStation's
  * symbols: the pad buttons in the same places, so A is the cross, B the
  * circle, X the square, Y the triangle, and the right trigger R2.
- * Recognised by their content hash (xbox_tex_observer), as the other texture
- * mods are; drawn here, nothing from any other game is used. */
+ * The texture observer identifies the button images by content hash. */
 
 #define PR_A 0x13DF2C89u
 #define PR_B 0x62764416u
@@ -746,7 +745,7 @@ static void prompts_tex(uint32_t hash, uint32_t *argb, int w, int h)
 
 
 /* re-decode the textures when the choice (or player 1's pad) changes */
-static void prompts_tick(void)
+void tt_prompts_tick(void)
 {
     if (getenv("TT_PRDUMP")) {   /* testing: every pad button in each style, 64 and 32 px, to prdump.bmp */
         static int done;

@@ -137,7 +137,7 @@ void xbox_BindDefaults(int which)
         set_kb(BIND_X, 'J', VK_RBUTTON, 0); set_kb(BIND_Y, 'I', 0, 0);
         set_kb(BIND_WHITE, 'Z', 0, 0); set_kb(BIND_BLACK, 'C', 0, 0);
         set_kb(BIND_LT, 'F', 0, 0); set_kb(BIND_RT, 'R', 0, 0);
-        set_kb(BIND_START, VK_RETURN, VK_ESCAPE, 0); set_kb(BIND_BACK, VK_BACK, VK_TAB, 0);
+        set_kb(BIND_START, VK_RETURN, 0, 0); set_kb(BIND_BACK, VK_BACK, VK_ESCAPE, 0);
         set_kb(BIND_LTHUMB, VK_SHIFT, 0, 0); set_kb(BIND_RTHUMB, VK_MBUTTON, 0, 0);
         set_kb(BIND_MOVE_UP, 'W', 0, 0); set_kb(BIND_MOVE_DOWN, 'S', 0, 0);
         set_kb(BIND_MOVE_LEFT, 'A', 0, 0); set_kb(BIND_MOVE_RIGHT, 'D', 0, 0);

@@ -28,10 +28,13 @@ Existing INI keys for retired options are ignored. Existing disc files, save fil
 - Renderer and platform support, including Direct3D 11, OpenGL, optional DXVK, and software paths. Kept internal resolution, widescreen, framing options for HUD, menus, films, and cutscenes, higher frame-rate modes, antialiasing, filtering, display calibration and post-processing, and focus-related audio or pause behavior.
 - Existing timing, graphics, animation, audio, memory, input, and crash fixes. Kept developer diagnostics and the generic scripted-input, texture-dump, and direct-level tools.
 
+The WASD layout defaults to Enter for Start and Backspace or Esc for Back. Automatic prompts use the last input device and current bindings.
+
 ## Implementation notes
 
 - The generated game functions and hand-written wrappers share dispatch entries and guest state. Preserve those contracts when editing them. Mixed multiplayer and hero wrapper code remains where carving it out could change the retail call path. Its mode entry points return the solo or off state regardless of legacy settings.
 - `twotowers/src/retail_hooks.c` supplies neutral results to callers of deleted modules. Its file hook always falls through to the original disc path. Keep the per-level reset it calls because it also resets the retail Fangorn cutscene fix.
+- The input prompt observer is independent of the removed demo HUD. It still redraws controls and hints when the active device or bindings change.
 - Renderer texture substitutions stay off at the renderer boundary. The ordinary texture decoder, cache, renderer fixes, and prompt textures remain in use.
 - Some internal graphics IDs remain reserved because the guest options and renderer share their numbering. They have no user-facing mod controls.
 - Future language support can be recovered from Git history. Reintroduce it with its own asset and font tests rather than restoring unrelated hero or Versus redirections with it.

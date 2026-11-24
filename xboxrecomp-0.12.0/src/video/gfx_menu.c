@@ -434,7 +434,7 @@ void xbox_GfxMenuToggle(void)
     EnterCriticalSection(&s_lock);
     s_open = !s_open;
     s_cur[GFX_FULLSCREEN] = xbox_FramebufferIsFullscreen();
-    /* Whatever closed it (Esc is also Start, B is B) must not reach the
+    /* Whatever closed it (Enter is Start, Esc is Back) must not reach the
      * game: the pad stays at rest until everything is let go. */
     s_block_pad = 1;
     s_ver++;
@@ -555,7 +555,7 @@ static void gfx_capture_poll(void)
 }
 
 /* Keys reach the menu through the controller stand-in (arrows = d-pad,
- * WASD = stick, Esc / Enter = Start, Space / K = A, L = B), the same path as a
+ * WASD = stick, Enter = Start, Esc = Back, Space / K = A, L = B), the same path as a
  * pad; only F10 is taken straight from the window. */
 int xbox_GfxMenuKey(int vk)
 {

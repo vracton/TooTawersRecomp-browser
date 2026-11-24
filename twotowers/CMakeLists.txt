@@ -92,6 +92,7 @@ set(GAME_SOURCES
     src/heroes.c
     src/retail_hooks.c
     src/menus.c
+    src/prompts.c
     src/options.c
     # Add game-specific sources here, e.g.:
     # src/asset_loader.c

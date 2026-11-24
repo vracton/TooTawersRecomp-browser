@@ -1330,7 +1330,9 @@ static int ready_image(const char *msg)
 }
 static int ptr_overlay(XboxOverlayQuad *q, int max)
 {
+    extern void tt_prompts_tick(void);
     int n = s_prev_ovl ? s_prev_ovl(q, max) : 0;
+    tt_prompts_tick();
     if ((tt_coop_cover || s_vs_cover) && n < max) {   /* the Co-op menu's New / Load: black while the game goes through the main menu */
         static const uint32_t black = 0xFF000000u;
         q[n].px = &black; q[n].w = 1; q[n].h = 1; q[n].ver = 7;

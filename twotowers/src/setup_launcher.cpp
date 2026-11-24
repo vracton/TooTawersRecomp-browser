@@ -654,7 +654,7 @@ static CtlState ctlDefaults(bool classic)
     } else {
         set(0, 'K', VK_LBUTTON, VK_SPACE); set(1, 'L'); set(2, 'J', VK_RBUTTON); set(3, 'I');
         set(5, 'Z'); set(4, 'C'); set(6, 'F'); set(7, 'R');
-        set(8, VK_RETURN, VK_ESCAPE); set(9, VK_BACK, VK_TAB); set(14, VK_SHIFT); set(15, VK_MBUTTON);
+        set(8, VK_RETURN); set(9, VK_BACK, VK_ESCAPE); set(14, VK_SHIFT); set(15, VK_MBUTTON);
         set(16, 'W'); set(17, 'S'); set(18, 'A'); set(19, 'D');
         set(20, VK_NUMPAD8); set(21, VK_NUMPAD2); set(22, VK_NUMPAD4); set(23, VK_NUMPAD6);
     }
