@@ -42,7 +42,7 @@ class GameHandler(BaseHTTPRequestHandler):
             return
 
         if route.startswith("/disc/"):
-            file = self.disc.get(route[len("/disc/"):])
+            file = self.disc.get(route[len("/disc/"):].lstrip("/"))
         else:
             try:
                 file = (self.build / (route.lstrip("/") or "index.html")).resolve()

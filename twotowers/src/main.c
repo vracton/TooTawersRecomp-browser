@@ -1407,6 +1407,19 @@ int main(int argc, char **argv)
     (void)argv;
 #if defined(_WIN32)
     return WinMain(GetModuleHandle(NULL), NULL, GetCommandLineA(), SW_SHOW);
+#elif defined(__EMSCRIPTEN__)
+    extern int tt_web_mount_disc(void);
+    if (tt_web_mount_disc() < 0) {
+        fprintf(stderr, "Could not mount the browser disc directory.\n");
+        return 1;
+    }
+    setenv("TWOTOWERS_GAME_DIR", "/game_files", 1);
+    setenv("RECOMP_RENDERER", "software", 1);
+    setenv("RECOMP_WINDOW_SIZE", "640x480", 1);
+    setenv("RECOMP_ASPECT", "1.3333", 1);
+    setenv("RECOMP_RENDER_SCALE", "1", 1);
+    setenv("TT_FPS", "30", 1);
+    return WinMain(NULL, NULL, (LPSTR)"", 0);
 #else
     env0_save();
     {   /* (2.0.1) the NVIDIA card asked for by the game itself, not only by TwoTowers.sh: started any other way (a script of its own,

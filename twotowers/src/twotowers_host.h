@@ -178,9 +178,13 @@ static void twotowers_setup_paths_and_log(void)
     const char *env_game = getenv("TWOTOWERS_GAME_DIR");
     char *slash;
 
+#ifdef __EMSCRIPTEN__
+    snprintf(g_exe_dir, sizeof(g_exe_dir), "/profile");
+#else
     GetModuleFileNameA(NULL, g_exe_dir, MAX_PATH);
     slash = strrchr(g_exe_dir, TT_SEP[0]);
     if (slash) *slash = 0;
+#endif
     snprintf(g_ini_path, sizeof(g_ini_path), "%s" TT_SEP "twotowers_recomp.ini", g_exe_dir);
     {
         /* An ini from an older build has no [Input] layout and describes the

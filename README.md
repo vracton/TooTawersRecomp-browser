@@ -14,6 +14,22 @@ Use Python 3.10 or newer and your own extracted USA retail Xbox disc.
 python generate.py path/to/extracted/game
 ```
 
+## Browser build
+
+Activate the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html)
+and build with CMake and Ninja.
+
+```sh
+emcmake cmake -S twotowers -B build-web -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build-web
+python serve.py --disc path/to/extracted/game
+```
+
+Open `http://127.0.0.1:8080` and click **Play**. The server defaults to the
+sibling `twotowers` disc folder and serves it on loopback. IndexedDB stores
+the browser profile for this origin. Use the same host and port to keep using
+the same profile.
+
 ## Desktop reference build
 
 The native executable is available for checking browser behavior against the desktop

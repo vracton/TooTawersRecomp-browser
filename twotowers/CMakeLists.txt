@@ -111,6 +111,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 )
 
 if(EMSCRIPTEN)
+    target_sources(${PROJECT_NAME} PRIVATE src/web_host.c)
     target_link_libraries(${PROJECT_NAME} PRIVATE SDL2::SDL2 m)
     target_compile_options(${PROJECT_NAME} PRIVATE
         -Wno-incompatible-pointer-types -Wno-int-conversion -Wno-format)
@@ -127,9 +128,13 @@ if(EMSCRIPTEN)
         -sFORCE_FILESYSTEM
         -sMODULARIZE
         -sEXPORT_ES6
+        -sINVOKE_RUN=0
         -sEXPORTED_RUNTIME_METHODS=FS,callMain,HEAPU8
     )
     set_target_properties(${PROJECT_NAME} PROPERTIES SUFFIX ".mjs")
+    foreach(asset index.html player.css player.mjs persistence.mjs)
+        configure_file(web/${asset} ${CMAKE_CURRENT_BINARY_DIR}/${asset} COPYONLY)
+    endforeach()
 elseif(WIN32)
     # Windows SDK libraries needed at link time
     # (d3d11.dll and dxgi.dll are loaded at run time: the system's, or
