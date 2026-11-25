@@ -18,7 +18,9 @@
 #include <intrin.h>
 #endif
 #include "xbox_memory_layout.h"
-#if defined(_MSC_VER) && !defined(__clang__)
+#if defined(__EMSCRIPTEN__)
+#define IRQL_CALLER() NULL
+#elif defined(_MSC_VER) && !defined(__clang__)
 #pragma intrinsic(_ReturnAddress)
 #define IRQL_CALLER() _ReturnAddress()
 #else

@@ -1331,14 +1331,18 @@ static void bridge_ExAllocatePoolWithTag(void)
 RECOMP_TLS void *g_kernel_host_ra;    /* host code that made this kernel call (diagnostics) */
 static void bridge_KfRaiseIrql(void)
 {
+#ifndef __EMSCRIPTEN__
     g_kernel_host_ra = __builtin_return_address(0);
+#endif
     uint32_t new_irql = g_ecx; /* fastcall: KIRQL is passed in CL */
     g_eax = (uint32_t)xbox_KfRaiseIrql((UCHAR)new_irql);
 }
 
 static void bridge_KfLowerIrql(void)
 {
+#ifndef __EMSCRIPTEN__
     g_kernel_host_ra = __builtin_return_address(0);
+#endif
     uint32_t new_irql = g_ecx; /* fastcall: KIRQL is passed in CL */
     xbox_KfLowerIrql((UCHAR)new_irql);
     g_eax = 0;
@@ -1347,7 +1351,9 @@ static void bridge_KfLowerIrql(void)
 /* ── KeRaiseIrqlToDpcLevel (ordinal 129) ─────────────────── */
 static void bridge_KeRaiseIrqlToDpcLevel(void)
 {
+#ifndef __EMSCRIPTEN__
     g_kernel_host_ra = __builtin_return_address(0);
+#endif
     g_eax = (uint32_t)xbox_KeRaiseIrqlToDpcLevel();
 }
 

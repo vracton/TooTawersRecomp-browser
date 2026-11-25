@@ -188,3 +188,14 @@ the final 300 battle frames with 47.9 ms p95 and 442.5 MiB of Wasm memory.
 The startup movie finished in 18.11 seconds. The 22-second story sample
 averaged 29.98 FPS with zero audio worklet underruns. There were 132
 cumulative underruns by combat. See `build-web/climb-default-play.log`.
+
+A V8 worker profile during the battle attributed about 315 ms of a
+four-second sample to JavaScript stack capture. Reading host return
+addresses in the interrupt-priority code triggered that work on Wasm.
+The browser now skips those host-only diagnostic addresses. Guest call
+history and the interrupt level logic are preserved. In two fast-start
+120 FPS cap runs with detailed WebGL timing disabled, the final 300 battle
+frames went from 39.4 FPS and 46.5 ms p95 to 63.4 FPS and 31.7 ms p95.
+Earlier portions still dropped below 60 FPS. The samples have different
+combat activity, so peak capacity is clearer than the exact speedup. See
+`build-web/climb-headroom-play.log` and `build-web/climb-irql-play.log`.
