@@ -8,9 +8,6 @@ cmake_minimum_required(VERSION 3.20)
 # ============================================================================
 
 project(twotowers_recomp C CXX)
-if(WIN32)
-    enable_language(RC)
-endif()
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -55,24 +52,6 @@ set(XBOXRECOMP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../xboxrecomp-0.12.0" CACHE PATH
 # and provides the 'xboxrecomp' umbrella target to link against.
 add_subdirectory(${XBOXRECOMP_DIR} ${CMAKE_BINARY_DIR}/xboxrecomp)
 
-# ── Icons and launcher art ───────────────────────────────────────
-# The repository ships a neutral icon. Your own art (for example from your
-# own disc's case) can go in resources/local/ -- twotowers.ico and
-# cover.bmp -- which git ignores; the launcher also shows a cover.bmp placed
-# beside it.
-set(TT_RES "${CMAKE_CURRENT_SOURCE_DIR}/resources")
-set(TT_ICON "${TT_RES}/app_icon.ico")
-if(EXISTS "${TT_RES}/local/twotowers.ico")
-    set(TT_ICON "${TT_RES}/local/twotowers.ico")
-endif()
-file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/app.rc"
-    "#include <windows.h>\n1 ICON \"${TT_ICON}\"\n1 24 \"${TT_RES}/app.manifest\"\n")
-set(TT_LAUNCHER_RC "#include <windows.h>\n1 ICON \"${TT_ICON}\"\n1 24 \"${TT_RES}/app.manifest\"\n")
-if(EXISTS "${TT_RES}/local/cover.bmp")
-    string(APPEND TT_LAUNCHER_RC "2 BITMAP \"${TT_RES}/local/cover.bmp\"\n")
-endif()
-file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/launcher.rc" "${TT_LAUNCHER_RC}")
-
 # ── Recompiled game executable ──────────────────────────────────
 
 # Collect generated recompiled code.
@@ -105,9 +84,6 @@ set(GAME_SOURCES
 #   src/recomp/recomp_dispatch.h     - binary search dispatch table
 #   src/recomp/recomp_types.h        - register model, ICALL macros, MEM helpers
 
-if(WIN32)
-    list(APPEND GAME_SOURCES ${CMAKE_CURRENT_BINARY_DIR}/app.rc)
-endif()
 add_executable(${PROJECT_NAME} WIN32
     ${GAME_SOURCES}
     ${RECOMP_GEN_SOURCES}
@@ -162,8 +138,6 @@ else()
         # libraries; the translated code nests deeply on the main thread's
         # stack (64 MB, as on Windows); SDL2 from lib/ beside the program
         # (or Homebrew's).
-        # (lld has no -stack_size: a cross build sets LC_MAIN's stack size
-        # afterwards -- tools/macho_stack.py; the rpaths are given outright)
         target_link_options(${PROJECT_NAME} PRIVATE -Wl,-stack_size,0x4000000
             -Wl,-rpath,@executable_path/lib -Wl,-rpath,@executable_path/../Frameworks
             -Wl,-rpath,/usr/local/lib -Wl,-rpath,/opt/homebrew/lib)
@@ -216,26 +190,4 @@ if(MINGW)
         -Wno-int-conversion -Wno-parentheses-equality)
     # Translated code nests deeply on the native stack.
     target_link_options(${PROJECT_NAME} PRIVATE -Wl,--stack,67108864 -static)
-endif()
-
-# First-launch setup / launcher: installs the game files from your ISO or
-# points at an extracted folder, then starts twotowers_recomp.exe.
-if(WIN32)
-add_executable(twotowers_launcher WIN32 src/setup_launcher.cpp ${CMAKE_CURRENT_BINARY_DIR}/launcher.rc)
-set_target_properties(twotowers_launcher PROPERTIES CXX_STANDARD 17
-    OUTPUT_NAME "The Two Towers Recompiled")
-target_link_libraries(twotowers_launcher PRIVATE comctl32 comdlg32 shell32 ole32 bcrypt)
-if(MINGW)
-    target_link_options(twotowers_launcher PRIVATE -static -municode)
-endif()
-else()
-# Linux: twotowers-setup (disc check/extraction, a few ini settings), run by
-# TwoTowers.sh. Statically linked C++ runtime so it runs on older systems.
-add_executable(twotowers-setup src/linux_setup.cpp)
-find_package(Threads REQUIRED)
-target_link_libraries(twotowers-setup PRIVATE Threads::Threads)
-set_target_properties(twotowers-setup PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
-if(NOT APPLE)
-    target_link_options(twotowers-setup PRIVATE -static-libstdc++ -static-libgcc)
-endif()
 endif()
