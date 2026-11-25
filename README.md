@@ -31,6 +31,33 @@ sibling `twotowers` disc folder and serves it on loopback. IndexedDB stores
 the browser profile for this origin. Use the same host and port to keep using
 the same profile.
 
+## Browser verification and performance
+
+Run `window.twoTowersUsage()` in the browser console after launching to see
+time to the first frame, FPS and 95th-percentile frame interval across the
+last 300 presents, Wasm linear memory, and audio underruns. Load `/?profile`
+for per-frame WebGL submission timings in the console. Those timings measure
+CPU-side submission and any waits it encounters. Use the browser profiler to
+measure process CPU and memory separately.
+
+On Windows with Edge and an AMD Radeon 780M, the browser reached the retail
+title screen, main menu, Normal difficulty, the skippable Bink intro, and
+the real-time prologue. A binary file in the save directory and an INI file
+survived a reload through IndexedDB. Campaign completion and a save created
+from gameplay are still unverified.
+
+| Sample | Result |
+| --- | --- |
+| Browser startup | First frame in 9.5 s after the Wasm module was ready |
+| Browser prologue | 9.0 FPS over the last 300 presents, 605 ms at the 95th percentile |
+| Browser mixed run | 225 renderer CPU-seconds and 267 GPU-process CPU-seconds over 98 wall-clock seconds, 442.5 MiB of Wasm linear memory by the prologue |
+| Native title and menu sample | Around 60 FPS at 640×480, 56 CPU-seconds over 26 wall-clock seconds, 389 MiB working set |
+
+The samples cover different parts of the game. The browser's 3D prologue
+still falls short of its 30 FPS target. The profile recorded long stalls
+during streamed buffer uploads and hundreds of audio underruns by the end
+of the prologue sample.
+
 ## Desktop reference build
 
 The native executable is available for checking browser behavior against the desktop

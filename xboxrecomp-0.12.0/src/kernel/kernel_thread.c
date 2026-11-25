@@ -18,6 +18,10 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #endif
+#ifdef __EMSCRIPTEN__
+#include <emscripten/atomic.h>
+#include <emscripten/threading.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include "kernel.h"
@@ -490,6 +494,15 @@ static NTSTATUS kdelay_inner(KPROCESSOR_MODE WaitMode, BOOLEAN Alertable, PLARGE
         QueryPerformanceCounter(&now);
         if (now.QuadPart - last > fq.QuadPart / 500) run = 0;   /* > 2 ms since the last: a new wait */
         last = now.QuadPart;
+#ifdef __EMSCRIPTEN__
+        static uint32_t yield_word;
+        if (!spin && ++run > 16 && !emscripten_is_main_browser_thread()) {
+            emscripten_atomic_wait_u32(&yield_word, 0, 150000);
+            QueryPerformanceCounter(&now);
+            last = now.QuadPart;
+            return STATUS_SUCCESS;
+        }
+#else
         /* Only while short sleeps really are short: on a PC whose timer
          * stays coarse (seen: a "0.25 ms" wait taking 4-15 ms) each one
          * cost a large part of a frame -- gameplay fell to 12 fps. The
@@ -504,6 +517,7 @@ static NTSTATUS kdelay_inner(KPROCESSOR_MODE WaitMode, BOOLEAN Alertable, PLARGE
             last = now.QuadPart;
             return STATUS_SUCCESS;
         }
+#endif
         SwitchToThread();
         return STATUS_SUCCESS;
     }
