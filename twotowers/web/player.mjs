@@ -242,7 +242,7 @@ play.addEventListener("click", async () => {
             args.push("--profile-webgl");
         }
         const fps = query.get("fps");
-        if (fps === "60" || fps === "120") {
+        if (fps === "60" || fps === "120" || fps === "unlocked") {
             args.push(`--fps=${fps}`);
         }
         game.callMain(args);

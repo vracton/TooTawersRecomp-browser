@@ -42,7 +42,7 @@ typedef struct {
 
 static GfxItem s_items[GFX_N] = {
     { "Frame rate", "fps", 12, { "30 fps (original)", "60 fps (experimental)", "75 fps", "90 fps", "100 fps", "120 fps",
-      "144 fps", "165 fps", "200 fps", "240 fps", "300 fps", "Unlocked (experimental)" },
+      "144 fps", "165 fps", "200 fps", "240 fps", "300 fps", "Unlocked (up to 1000 fps)" },
       { "30", "60", "75", "90", "100", "120", "144", "165", "200", "240", "300", "unlocked" },
       "Above 30 fps is experimental: some scenes can run faster than normal" },
     { "Display mode", "fullscreen", 3, { "Windowed", "Borderless full screen", "Exclusive full screen" }, { "0", "1", "2" },

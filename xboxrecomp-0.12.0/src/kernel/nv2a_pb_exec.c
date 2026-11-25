@@ -2150,8 +2150,11 @@ static void frame_limit(void)
     period = f.QuadPart / hz;
     QueryPerformanceCounter(&n);
     if (!next || n.QuadPart - next > period * 4 || next - n.QuadPart > period * 4) next = n.QuadPart;   /* (a pause, or the rate changed) */
-    if (n.QuadPart < next) xbox_precise_wait_until(next);
-    next += period;
+    if (n.QuadPart < next) {
+        xbox_precise_wait_until(next);
+        if (hz >= 500) QueryPerformanceCounter(&n);
+    }
+    next = hz >= 500 ? n.QuadPart + period : next + period;
 }
 void nv2a_pb_exec_method(uint32_t subch, uint32_t method, uint32_t param);
 /* (1.9.5) What changed since the last draw (sw3d_batch reads and clears it):

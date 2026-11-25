@@ -982,8 +982,12 @@ void xbox_FramebufferWindowPresent(uint32_t fb_va, uint32_t pitch)
 static volatile unsigned char s_key_down[256];
 
 #ifdef __EMSCRIPTEN__
+extern int xbox_GfxMenuKey(int vk);
+
 EMSCRIPTEN_KEEPALIVE void xbox_WebKey(int key, int down)
 {
+    if (key == VK_F10 && down && !s_key_down[key])
+        xbox_GfxMenuKey(key);
     if ((unsigned)key < sizeof(s_key_down))
         s_key_down[key] = down != 0;
 }

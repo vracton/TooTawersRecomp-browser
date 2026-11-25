@@ -1422,8 +1422,11 @@ int main(int argc, char **argv)
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--profile-webgl") == 0)
             setenv("RECOMP_WEB_PROFILE", "1", 1);
-        else if (strcmp(argv[i], "--fps=60") == 0 || strcmp(argv[i], "--fps=120") == 0)
-            setenv("TT_FPS", argv[i] + 6, 1);
+        else if (strncmp(argv[i], "--fps=", 6) == 0) {
+            const char *fps = argv[i] + 6;
+            if (strcmp(fps, "60") == 0 || strcmp(fps, "120") == 0 || strcmp(fps, "unlocked") == 0)
+                setenv("TT_FPS", fps, 1);
+        }
     }
     return WinMain(NULL, NULL, (LPSTR)"", 0);
 #else
