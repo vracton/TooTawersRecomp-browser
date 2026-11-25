@@ -130,6 +130,7 @@ void sub_000E3AF0(void)
     static char names[16][48];
     static uint32_t vals[16];
     const uint32_t key = MEM32(esp + 4);
+    const uint32_t startup_save_check_return = 0x0007F2C0u;
     int i;
     if (n < 0) {
         const char *e = getenv("TT_TWEAKS");
@@ -173,6 +174,8 @@ void sub_000E3AF0(void)
             if (post && tt_net_on() && (!_stricmp(k, "LEVEL") || !_stricmp(k, "SKIPMAINMENU"))) eax = 0;
         }
     }
+    if (!eax && MEM32(esp) == startup_save_check_return && !getenv("TT_FIRSTRUN_PROLOGUE"))
+        MEM8(esi + 0x3F8u) = 1;
     esp += 4;   /* ret (cdecl) */
 }
 
