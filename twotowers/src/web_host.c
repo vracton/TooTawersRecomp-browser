@@ -18,6 +18,22 @@ static int create_parent_directories(char *path)
     return 0;
 }
 
+static int mount_partitions(void)
+{
+    backend_t backend = wasmfs_create_fetch_backend("/partitions", 64 * 1024);
+    if (!backend || wasmfs_create_directory("/virtual_disk", 0755, backend) < 0)
+        return -1;
+    for (int partition = 1; partition <= 5; ++partition) {
+        char path[40];
+        snprintf(path, sizeof(path), "/virtual_disk/partition%d.img", partition);
+        int fd = wasmfs_create_file(path, S_IRUSR | S_IWUSR, backend);
+        if (fd < 0)
+            return -1;
+        close(fd);
+    }
+    return 0;
+}
+
 int tt_web_mount_disc(void)
 {
     FILE *manifest = fopen("/disc-manifest", "r");
@@ -45,7 +61,7 @@ int tt_web_mount_disc(void)
             goto done;
         close(fd);
     }
-    result = ferror(manifest) ? -1 : 0;
+    result = ferror(manifest) ? -1 : mount_partitions();
 
 done:
     fclose(manifest);

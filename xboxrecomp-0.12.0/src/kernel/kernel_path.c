@@ -669,6 +669,12 @@ static BOOL xbox_partition_device_path(const char *xbox_path, char *out, DWORD n
     rest = xbox_path + len + 1;
     if (*rest == '\\' || *rest == '/') rest++;
     if (*rest != '\0') return FALSE;
+#ifdef __EMSCRIPTEN__
+    if (digit >= '1' && digit <= '5') {
+        snprintf(out, n, "/virtual_disk/partition%c.img", (char)digit);
+        return TRUE;
+    }
+#endif
     snprintf(out, n, "%s/Partition%c.img", s_save_dir, (char)digit);
     return TRUE;
 }
@@ -751,8 +757,10 @@ void xbox_path_init(const char* game_dir, const char* save_dir)
 
     {
         static const char *subs[] = { "TitleData", "UserData", "Cache", "SystemData" };
+#ifndef __EMSCRIPTEN__
         static const unsigned long long part_sectors[6] = {
             0, 0x00465400ull, 0x000FA000ull, 0x00177000ull, 0x00177000ull, 0x00177000ull };
+#endif
         char p[MAX_PATH + 32];
         int i;
         mkdir_p(s_save_dir);
@@ -760,15 +768,17 @@ void xbox_path_init(const char* game_dir, const char* save_dir)
         snprintf(p, sizeof p, "%s/Partition0.img", s_save_dir);
         xbox_write_partition_table(p);
         /* the other partitions at the sizes the table gives; sparse files */
+#ifndef __EMSCRIPTEN__
         for (i = 1; i <= 5; i++) {
-            struct stat st;
             snprintf(p, sizeof p, "%s/Partition%d.img", s_save_dir, i);
+            struct stat st;
             if (stat(p, &st) != 0 || (unsigned long long)st.st_size != part_sectors[i] * 512ull) {
                 FILE *f = fopen(p, "ab");
                 if (f) fclose(f);
                 if (truncate(p, (off_t)(part_sectors[i] * 512ull)) != 0) { /* not fatal */ }
             }
         }
+#endif
     }
 
     posix_migrate_partition1_saves();
