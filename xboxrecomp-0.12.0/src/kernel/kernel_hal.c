@@ -181,8 +181,6 @@ static BOOL CALLBACK cpu_lock_init(PINIT_ONCE o, PVOID p, PVOID *c)
 
 void xbox_CpuLock(void)
 {
-    int i;
-
     if (g_cpu_lock_mode < 0) {
         const char *v = getenv("RECOMP_CPU_LOCK");
         g_cpu_lock_mode = (v && v[0] == '0') ? 0 : 1;
@@ -190,13 +188,21 @@ void xbox_CpuLock(void)
     if (!g_cpu_lock_mode)
         return;
     InitOnceExecuteOnce(&g_cpu_lock_once, cpu_lock_init, NULL, NULL);
-    for (i = 0; i < 2000; i++) {                 /* ~2 s */
+#ifdef __EMSCRIPTEN__
+    extern BOOL xbox_TimedEnterCriticalSection(LPCRITICAL_SECTION cs, unsigned seconds);
+    if (xbox_TimedEnterCriticalSection(&g_cpu_lock, 2)) {
+        g_cpu_lock_held++;
+        return;
+    }
+#else
+    for (int i = 0; i < 2000; i++) {             /* ~2 s */
         if (TryEnterCriticalSection(&g_cpu_lock)) {
             g_cpu_lock_held++;
             return;
         }
         Sleep(i < 50 ? 0 : 1);
     }
+#endif
     {
         /* Go ahead without it this once. Three times over, and it is a leaked
          * raise rather than a slow holder: stop waiting on it altogether. */

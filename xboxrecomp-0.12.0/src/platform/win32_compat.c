@@ -128,6 +128,21 @@ BOOL TryEnterCriticalSection(LPCRITICAL_SECTION cs)
     return FALSE;
 }
 
+#ifdef __EMSCRIPTEN__
+BOOL xbox_TimedEnterCriticalSection(LPCRITICAL_SECTION cs, unsigned seconds)
+{
+    if (TryEnterCriticalSection(cs))
+        return TRUE;
+    struct timespec deadline;
+    clock_gettime(CLOCK_REALTIME, &deadline);
+    deadline.tv_sec += seconds;
+    if (pthread_mutex_timedlock((pthread_mutex_t *)cs->LockSemaphore, &deadline) != 0)
+        return FALSE;
+    cs->RecursionCount++;
+    return TRUE;
+}
+#endif
+
 VOID DeleteCriticalSection(LPCRITICAL_SECTION cs)
 {
     if (cs->LockSemaphore) {

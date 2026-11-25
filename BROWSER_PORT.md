@@ -199,3 +199,22 @@ frames went from 39.4 FPS and 46.5 ms p95 to 63.4 FPS and 31.7 ms p95.
 Earlier portions still dropped below 60 FPS. The samples have different
 combat activity, so peak capacity is clearer than the exact speedup. See
 `build-web/climb-headroom-play.log` and `build-web/climb-irql-play.log`.
+
+Browser workers now use a bounded blocking mutex wait for the dispatch
+lock. Previously, a contender polled the lock and eventually slept for a
+millisecond between attempts. The same recursive lock and two-second
+watchdog remain. The corresponding 120 FPS cap run averaged 69.0 FPS over
+the final 300 battle frames, with 23.6 ms p95 and 442.5 MiB Wasm memory.
+In the final seconds, the game and render threads each spent about 10–11 ms
+on their respective work. Each of the final ten one-second intervals ran
+between 65.2 and 74.9 FPS. A separate 60 FPS cap run averaged 59.9 FPS
+over its final 300 frames with 30.9 ms p95. Earlier combat still dropped
+below 60 FPS, and p95 exceeded the 16.7 ms budget in both cap runs. See
+`build-web/climb-dispatch-play.log` and `build-web/climb-cap60-play.log`.
+
+The same build with the default settings averaged 30.0 FPS over the final
+300 battle frames with 46.9 ms p95, 442.5 MiB linear memory, and 141
+cumulative audio underruns. The game's 10-second simulation sample kept
+pace with real time. These fast-start tests skipped the movies after a few
+seconds and entered battle on Normal. They complement the separate movie
+sync measurements above. See `build-web/climb-final-default-play.log`.
