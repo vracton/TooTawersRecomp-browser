@@ -418,7 +418,9 @@ enum { UB_VSC = 0, UB_PSC = 1, UB_CLC = 2, UB_POST = 3, UB_VPC = 4 };
 typedef struct { GLuint buf; GLenum target; uint32_t cap, pos; uint8_t *map; void *fence[RING_SEGS]; uint32_t seg; } GRing;
 static GRing g_rvb = { 0, GL_ARRAY_BUFFER, 0, 0 }, g_rvbx = { 0, GL_ARRAY_BUFFER, 0, 0 };
 static GRing g_rib = { 0, GL_ELEMENT_ARRAY_BUFFER, 0, 0 }, g_rub = { 0, GL_UNIFORM_BUFFER, 0, 0 };
+#ifndef __EMSCRIPTEN__
 static GLint g_ubo_align = 256;
+#endif
 static int g_rub_fresh;   /* (2.0.0) the uniform ring was given a fresh store: the blocks bound in the old one sent again */
 /* (2.0.0) testing: RECOMP_GL_RINGTEST=1 -- small rings, and a fresh store filled with garbage (as a driver may give
  * it), so a draw that still reads what was in the old store shows it at once; =2: also as before 2.0.0 (the blocks not
@@ -526,11 +528,24 @@ static uint32_t gpu_ring(GRing *r, const void *data, uint32_t bytes, uint32_t al
  * happened to keep the old contents there; NVIDIA's driver does not, and surfaces flickered grey and jumped, most
  * when paused (the constants unchanged the longest). Now every block bound before is sent again into the fresh store. */
 #define UB_N 5
+#ifndef __EMSCRIPTEN__
 #define UB_KEEP (192 * 16)
 static unsigned char g_ub_last[UB_N][UB_KEEP];
 static uint32_t g_ub_len[UB_N];
+#endif
 static void gpu_ub(int binding, const void *data, uint32_t bytes)
 {
+#ifdef __EMSCRIPTEN__
+    static GLuint buffers[UB_N];
+    GLuint *buffer = &buffers[binding];
+    if (!*buffer)
+        glGenBuffers(1, buffer);
+    glBindBuffer(GL_UNIFORM_BUFFER, *buffer);
+    double start = web_profile_begin();
+    glBufferData(GL_UNIFORM_BUFFER, bytes, data, GL_STREAM_DRAW);
+    web_profile_add(WEB_PROFILE_UPLOAD, start);
+    glBindBufferRange(GL_UNIFORM_BUFFER, (GLuint)binding, *buffer, 0, bytes);
+#else
     uint32_t at = gpu_ring(&g_rub, data, bytes, (uint32_t)g_ubo_align);
     if (at != 0xFFFFFFFFu) glBindBufferRange(GL_UNIFORM_BUFFER, (GLuint)binding, g_rub.buf, at, bytes);
     if (binding >= 0 && binding < UB_N) {
@@ -551,6 +566,7 @@ static void gpu_ub(int binding, const void *data, uint32_t bytes)
             }
         }
     }
+#endif
 }
 
 /* ---------------- surfaces ---------------- */
@@ -1718,9 +1734,6 @@ static int gpu_init(void)
         g_parallel = 1;
     }
 #else
-    glGetIntegerv(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, &g_ubo_align);
-    if (g_ubo_align < 16)
-        g_ubo_align = 16;
     g_parallel = gl_has_ext("GL_KHR_parallel_shader_compile") ||
         gl_has_ext("KHR_parallel_shader_compile");
 #endif
