@@ -2413,11 +2413,45 @@ void sub_0007A4D0(void)
 /* the game's wait for the next frame (in the front end and in play): the
  * menus' frame (menus.c) */
 extern void sub_000E00E0_gen(void);
+#ifdef __EMSCRIPTEN__
+#include <emscripten/atomic.h>
+#include <emscripten/emscripten.h>
+
+extern int xbox_MoviePlaying(void);
+static RECOMP_TLS double web_movie_started;
+static RECOMP_TLS uint32_t web_movie_first_frame, web_movie_previous_frame;
+
+static void web_movie_wait(uint32_t movie)
+{
+    static uint32_t wait_word;
+    uint32_t frame = MEM32(movie + 0xCu);
+    uint32_t rate = MEM32(movie + 0x14u);
+    uint32_t divisor = MEM32(movie + 0x18u);
+    if (!frame || !divisor || rate / divisor < 10 || rate / divisor > 120)
+        return;
+
+    double now = emscripten_get_now();
+    if (!web_movie_started || frame < web_movie_previous_frame || frame - web_movie_previous_frame > 1) {
+        web_movie_started = now;
+        web_movie_first_frame = frame;
+    }
+    web_movie_previous_frame = frame;
+    double deadline = web_movie_started + (frame - web_movie_first_frame) * (1000.0 * divisor / rate);
+    if (deadline > now)
+        emscripten_atomic_wait_u32(&wait_word, 0, (int64_t)((deadline - now) * 1000000.0));
+    MEM32(0x4B7618u) = 2;
+}
+#endif
+
 void sub_000E00E0(void)
 {
     extern void tt_menus_tick(void);
     uint32_t sa = eax, sb = ebx, sc = ecx, sd = edx, ss = esi, sdi = edi, sp = esp;
     tt_menus_tick();
+#ifdef __EMSCRIPTEN__
+    if (MEM32(sp) == 0x000E8DC8u && sdi >= 0x10000u && xbox_MoviePlaying())
+        web_movie_wait(sdi);
+#endif
     eax = sa; ebx = sb; ecx = sc; edx = sd; esi = ss; edi = sdi; esp = sp;
     sub_000E00E0_gen();
 }
@@ -2845,6 +2879,9 @@ extern void sub_000E8B20_gen(void); void sub_000E8B20(void) { if (coop_probe_on(
  * level's film). Every film may be skipped the first time too (a playtest). TT_NOFILMSKIP: as the game */
 extern void sub_000E8B70_gen(void); void sub_000E8B70(void) {
     uint32_t a1 = MEM32(esp + 4), m = MEM32(esp + 8);
+#ifdef __EMSCRIPTEN__
+    web_movie_started = 0;
+#endif
     if (coop_probe_on()) coop_in(0x000E8B70u);
     tt_dbg("[FILM] %s, mode %u%s\n", a1 >= 0x10000u && a1 < 0x88000000u ? (const char *)XBOX_PTR(a1) : "?", m, m == 1 && !getenv("TT_NOFILMSKIP") ? ": may be skipped (was not)" : "");
     if (m == 1 && !getenv("TT_NOFILMSKIP")) MEM32(esp + 8) = 0;

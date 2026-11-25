@@ -121,5 +121,24 @@ the same file. It finished in 19.7 seconds with zero audio underruns in the
 12-second sample. The first 22 seconds of `mont.bik` produced 28.1 FPS over
 the latest 300 frames, 47.5 ms p95, and one new audio worklet underrun.
 These samples verify playback and measure stalls. Direct agreement between
-the video frames and the audio track has yet to be measured. Local logs are
-`build-web/climb-verified.log` and `build-web/climb-server-main.log`.
+the video frames and the audio track was measured separately below. Local
+logs are `build-web/climb-verified.log` and `build-web/climb-server-main.log`.
+
+### Movie clock
+
+Bink frames were also waiting for the emulated console's vblank counter.
+The browser now uses a monotonic deadline based on the Bink frame index and
+encoded rate for the movie's own frame wait. A late frame can catch up to
+the scheduled deadline. The guest's GPU completion wait still runs, and
+gameplay keeps its own pacing. The startup and story assets inspected both
+encode 29.97 FPS.
+
+A separate Edge run recorded AudioWorklet output and sampled rendered
+frames from `logos.bik`. Matching both tracks against the local Bink asset
+put the strongest baseline matches around 0.7 seconds of audio lead at
+9.5 and 13.4 seconds. After the clock change, five strong matches from
+3.6 to 12.9 seconds ranged from 30 ms of audio lag to 120 ms of audio lead.
+These are estimates from timed screenshots and audio correlation. Capture
+latency limits the precision. Local comparisons are `build-web/climb-av-before.log`
+and `build-web/climb-av-after.log`. Long movies under load and later chapters
+still need the same check.
