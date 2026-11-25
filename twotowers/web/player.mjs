@@ -18,6 +18,7 @@ function connectCanvas(game) {
     let image;
     let frames = 0;
     let firstFrame;
+    let renderer = "software";
     let previousFrame;
     const intervals = [];
     const started = performance.now();
@@ -35,9 +36,10 @@ function connectCanvas(game) {
         }
         previousFrame = now;
     }
-    globalThis.twoTowersGpuPresent = () => {
+    globalThis.twoTowersGpuPresent = (workerOwned) => {
         if (!gpuCanvas.classList.contains("active")) {
             gpuCanvas.classList.add("active");
+            renderer = workerOwned ? "webgl2-worker" : "webgl2";
         }
         recordFrame(performance.now());
     };
@@ -70,7 +72,7 @@ function connectCanvas(game) {
             frameTimeP95Ms: ordered[Math.floor(ordered.length * 0.95)] ?? null,
             wasmMemoryBytes: game.HEAPU8.byteLength,
             audioUnderruns: globalThis.twoTowersAudioOutput?.underruns() ?? null,
-            renderer: gpuCanvas.classList.contains("active") ? "webgl2" : "software",
+            renderer,
         };
     };
 }
@@ -139,7 +141,7 @@ play.addEventListener("click", async () => {
         }
         const files = await response.json();
         const game = await wasm.default({
-            canvas,
+            canvas: gpuCanvas,
             noInitialRun: true,
             onAbort: (error) => showStatus(`The game stopped. ${error}`),
             onExit: (code) => showStatus(`The game exited with code ${code}.`),

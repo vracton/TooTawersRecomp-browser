@@ -2,6 +2,7 @@
 #include <emscripten/html5_webgl.h>
 
 static EMSCRIPTEN_WEBGL_CONTEXT_HANDLE web_context;
+static int web_offscreen;
 static int web_unpack_stride;
 static int web_pack_stride;
 static uint32_t *web_pixels;
@@ -120,9 +121,13 @@ static int web_bind_context(void)
     attributes.depth = EM_FALSE;
     attributes.stencil = EM_FALSE;
     attributes.antialias = EM_FALSE;
-    attributes.explicitSwapControl = EM_TRUE;
-    attributes.renderViaOffscreenBackBuffer = EM_TRUE;
-    attributes.proxyContextToMainThread = EMSCRIPTEN_WEBGL_CONTEXT_PROXY_ALWAYS;
+    web_offscreen = EM_ASM_INT({
+        return typeof OffscreenCanvas !== "undefined" && Module["canvas"] instanceof OffscreenCanvas;
+    });
+    attributes.explicitSwapControl = !web_offscreen;
+    attributes.renderViaOffscreenBackBuffer = !web_offscreen;
+    attributes.proxyContextToMainThread = web_offscreen ?
+        EMSCRIPTEN_WEBGL_CONTEXT_PROXY_DISALLOW : EMSCRIPTEN_WEBGL_CONTEXT_PROXY_ALWAYS;
     web_context = emscripten_webgl_create_context("#gpu-canvas", &attributes);
     if (web_context > 0 && emscripten_webgl_make_context_current(web_context) == EMSCRIPTEN_RESULT_SUCCESS)
         return 1;

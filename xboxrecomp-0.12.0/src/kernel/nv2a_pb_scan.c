@@ -28,6 +28,11 @@
 #include <string.h>
 #include "kernel.h"   /* (1.9.3) windows.h: QueryPerformanceCounter for [PERF] */
 #include "nv2a_copy.h"   /* (1.9.5) rt_copy */
+#ifdef __EMSCRIPTEN__
+#include <emscripten/atomic.h>
+#include <emscripten/eventloop.h>
+#endif
+
 extern const char *recomp_cgetenv(const char *name);
 #define getenv(n) recomp_cgetenv(n)
 #ifndef XBOX_CONTIG_BASE
@@ -345,86 +350,131 @@ static int s_async = -1;
 static volatile LONG s_rt_sleeping, s_pb_waiting;   /* (1.9.3) events signalled only to a waiting thread */
 static int s_mark_pending;   /* a run began; its marker not yet in the ring */
 volatile long long g_perf_rt_ticks;   /* the render thread's time executing, for [PERF] */
+static int pb_render_batch(void)
+{
+    LONG h = s_ring_head, t = s_ring_tail, done = 0;
+    LARGE_INTEGER a, b;
+#ifdef __EMSCRIPTEN__
+    extern volatile unsigned g_nv2a_flips;
+    unsigned flips = g_nv2a_flips;
+#endif
+    if (h == t)
+        return 0;
+    QueryPerformanceCounter(&a);
+    while (h != t) {
+        uint32_t sm = s_ring[2 * h], pr = s_ring[2 * h + 1];
+        /* a kick's start: a run, as the texture and surface caches count
+         * them (memory the CPU wrote is looked at again once a run);
+         * counted per wake-up instead, textures were hashed again many
+         * times a frame */
+        if (sm == 0xFFFFFFFFu) g_pb_runs++;
+        else if (sm >= PB_METH_HDR && sm < 0xFFFE0000u) {
+            extern void nv2a_pb_exec_block(uint32_t hdr, const uint32_t *w, uint32_t n, uint32_t at);
+            uint32_t n = pr, ent = (n + 1) / 2;
+            LONG d = (h + 1) & (PB_RING - 1);
+            uint32_t first = (uint32_t)(PB_RING - d);
+            if (first >= ent) nv2a_pb_exec_block(sm, &s_ring[2 * d], n, 0);
+            else {
+                nv2a_pb_exec_block(sm, &s_ring[2 * d], first * 2, 0);
+                nv2a_pb_exec_block(sm, &s_ring[0], n - first * 2, first * 2);
+            }
+            h = (h + ent) & (PB_RING - 1);
+            done += ent;
+        }
+        else if (sm == PB_RAW_HDR) {
+            extern void nv2a_pb_exec_raw(const uint32_t *w, uint32_t n);
+            static uint32_t *tmp; static uint32_t tcap;
+            uint32_t n = pr, ent = (n + 1) / 2;
+            LONG d = (h + 1) & (PB_RING - 1);
+            uint32_t first = (uint32_t)(PB_RING - d);
+            if (first >= ent) nv2a_pb_exec_raw(&s_ring[2 * d], n);
+            else {   /* (wrapped: put back together, a method may straddle the seam) */
+                if (tcap < n) { free(tmp); tcap = n * 2; tmp = (uint32_t *)malloc((size_t)tcap * 4); }
+                if (tmp) {
+                    memcpy(tmp, &s_ring[2 * d], (size_t)first * 8);
+                    memcpy(tmp + first * 2, &s_ring[0], (size_t)(n - first * 2) * 4);
+                    nv2a_pb_exec_raw(tmp, n);
+                }
+            }
+            h = (h + ent) & (PB_RING - 1);
+            done += ent;
+        }
+        else if (sm == PB_INLINE_HDR || sm == PB_CONST_HDR) {
+            extern void nv2a_pb_exec_inline(const uint32_t *w, uint32_t n);
+            extern void nv2a_pb_exec_consts(const uint32_t *w, uint32_t n);
+            void (*f)(const uint32_t *, uint32_t) = sm == PB_INLINE_HDR ? nv2a_pb_exec_inline : nv2a_pb_exec_consts;
+            uint32_t n = pr, ent = (n + 1) / 2;
+            LONG d = (h + 1) & (PB_RING - 1);
+            uint32_t first = (uint32_t)(PB_RING - d);   /* entries before the ring wraps */
+            if (first >= ent) f(&s_ring[2 * d], n);
+            else {
+                f(&s_ring[2 * d], first * 2);
+                f(&s_ring[0], n - first * 2);
+            }
+            h = (h + ent) & (PB_RING - 1);
+            done += ent;
+        }
+        else nv2a_pb_exec_method(sm >> 16, sm & 0xFFFFu, pr);
+        h = (h + 1) & (PB_RING - 1);
+#ifdef __EMSCRIPTEN__
+        if (g_nv2a_flips != flips)
+            break;
+#endif
+        if (++done >= 1024) { done = 0; InterlockedExchange(&s_ring_head, h); if (s_pb_waiting) SetEvent(s_ring_space); }
+    }
+    InterlockedExchange(&s_ring_head, h);
+    if (s_pb_waiting) SetEvent(s_ring_space);
+    QueryPerformanceCounter(&b);
+    g_perf_rt_ticks += b.QuadPart - a.QuadPart;
+    return 1;
+}
+
+#ifdef __EMSCRIPTEN__
+static void pb_web_render(void *unused);
+static void pb_web_wake(int32_t *address, uint32_t value, ATOMICS_WAIT_RESULT_T result, void *unused)
+{
+    (void)address;
+    (void)value;
+    (void)result;
+    pb_web_render(unused);
+}
+
+static void pb_web_render(void *unused)
+{
+    (void)unused;
+    pb_render_batch();
+    LONG head = s_ring_head;
+    if (head != s_ring_tail ||
+        !EMSCRIPTEN_IS_VALID_WAIT_TOKEN(emscripten_atomic_wait_async(
+            &s_ring_tail, (uint32_t)head, pb_web_wake, NULL, EMSCRIPTEN_WAIT_ASYNC_INFINITY))) {
+        emscripten_set_immediate(pb_web_render, NULL);
+    }
+}
+#endif
+
 static DWORD WINAPI pb_render_thread(LPVOID p)
 {
     extern void xbox_UnpinServiceThread(void);
     (void)p;
     xbox_UnpinServiceThread();
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+#ifdef __EMSCRIPTEN__
+    emscripten_runtime_keepalive_push();
+    pb_web_render(NULL);
+    emscripten_unwind_to_js_event_loop();
+#else
     for (;;) {
-        LONG h = s_ring_head, t = s_ring_tail, done = 0;
-        LARGE_INTEGER a, b;
-        if (h == t) {
+        if (!pb_render_batch()) {
             InterlockedExchange(&s_rt_sleeping, 1);
-            if (s_ring_tail == h) WaitForSingleObject(s_ring_wake, 2);
+            if (s_ring_tail == s_ring_head)
+                WaitForSingleObject(s_ring_wake, 2);
             InterlockedExchange(&s_rt_sleeping, 0);
-            continue;
         }
-        QueryPerformanceCounter(&a);
-        while (h != t) {
-            uint32_t sm = s_ring[2 * h], pr = s_ring[2 * h + 1];
-            /* a kick's start: a run, as the texture and surface caches count
-             * them (memory the CPU wrote is looked at again once a run);
-             * counted per wake-up instead, textures were hashed again many
-             * times a frame */
-            if (sm == 0xFFFFFFFFu) g_pb_runs++;
-            else if (sm >= PB_METH_HDR && sm < 0xFFFE0000u) {
-                extern void nv2a_pb_exec_block(uint32_t hdr, const uint32_t *w, uint32_t n, uint32_t at);
-                uint32_t n = pr, ent = (n + 1) / 2;
-                LONG d = (h + 1) & (PB_RING - 1);
-                uint32_t first = (uint32_t)(PB_RING - d);
-                if (first >= ent) nv2a_pb_exec_block(sm, &s_ring[2 * d], n, 0);
-                else {
-                    nv2a_pb_exec_block(sm, &s_ring[2 * d], first * 2, 0);
-                    nv2a_pb_exec_block(sm, &s_ring[0], n - first * 2, first * 2);
-                }
-                h = (h + ent) & (PB_RING - 1);
-                done += ent;
-            }
-            else if (sm == PB_RAW_HDR) {
-                extern void nv2a_pb_exec_raw(const uint32_t *w, uint32_t n);
-                static uint32_t *tmp; static uint32_t tcap;
-                uint32_t n = pr, ent = (n + 1) / 2;
-                LONG d = (h + 1) & (PB_RING - 1);
-                uint32_t first = (uint32_t)(PB_RING - d);
-                if (first >= ent) nv2a_pb_exec_raw(&s_ring[2 * d], n);
-                else {   /* (wrapped: put back together, a method may straddle the seam) */
-                    if (tcap < n) { free(tmp); tcap = n * 2; tmp = (uint32_t *)malloc((size_t)tcap * 4); }
-                    if (tmp) {
-                        memcpy(tmp, &s_ring[2 * d], (size_t)first * 8);
-                        memcpy(tmp + first * 2, &s_ring[0], (size_t)(n - first * 2) * 4);
-                        nv2a_pb_exec_raw(tmp, n);
-                    }
-                }
-                h = (h + ent) & (PB_RING - 1);
-                done += ent;
-            }
-            else if (sm == PB_INLINE_HDR || sm == PB_CONST_HDR) {
-                extern void nv2a_pb_exec_inline(const uint32_t *w, uint32_t n);
-                extern void nv2a_pb_exec_consts(const uint32_t *w, uint32_t n);
-                void (*f)(const uint32_t *, uint32_t) = sm == PB_INLINE_HDR ? nv2a_pb_exec_inline : nv2a_pb_exec_consts;
-                uint32_t n = pr, ent = (n + 1) / 2;
-                LONG d = (h + 1) & (PB_RING - 1);
-                uint32_t first = (uint32_t)(PB_RING - d);   /* entries before the ring wraps */
-                if (first >= ent) f(&s_ring[2 * d], n);
-                else {
-                    f(&s_ring[2 * d], first * 2);
-                    f(&s_ring[0], n - first * 2);
-                }
-                h = (h + ent) & (PB_RING - 1);
-                done += ent;
-            }
-            else nv2a_pb_exec_method(sm >> 16, sm & 0xFFFFu, pr);
-            h = (h + 1) & (PB_RING - 1);
-            if (++done >= 1024) { done = 0; InterlockedExchange(&s_ring_head, h); if (s_pb_waiting) SetEvent(s_ring_space); }
-        }
-        InterlockedExchange(&s_ring_head, h);
-        if (s_pb_waiting) SetEvent(s_ring_space);
-        QueryPerformanceCounter(&b);
-        g_perf_rt_ticks += b.QuadPart - a.QuadPart;
     }
     return 0;
+#endif
 }
+
 static int pb_async(void)
 {
     if (s_async < 0) {
@@ -439,7 +489,20 @@ static int pb_async(void)
             s_ring = (uint32_t *)malloc((size_t)PB_RING * 8);
             s_ring_wake = CreateEventW(NULL, FALSE, FALSE, NULL);
             s_ring_space = CreateEventW(NULL, FALSE, FALSE, NULL);
-            if (!s_ring || !s_ring_wake || !s_ring_space || !CreateThread(NULL, 0, pb_render_thread, NULL, 0, NULL)) s_async = 0;
+            if (!s_ring || !s_ring_wake || !s_ring_space) {
+                s_async = 0;
+            } else {
+#ifdef __EMSCRIPTEN__
+                extern HANDLE w32_CreateCanvasThread(LPTHREAD_START_ROUTINE start);
+                HANDLE thread = w32_CreateCanvasThread(pb_render_thread);
+#else
+                HANDLE thread = CreateThread(NULL, 0, pb_render_thread, NULL, 0, NULL);
+#endif
+                if (thread)
+                    CloseHandle(thread);
+                else
+                    s_async = 0;
+            }
         }
         fprintf(stderr, "  [NV2A] GPU commands %s\n", s_async ? "recorded as kicked, executed on a render thread of their own" : "executed as kicked");
         fflush(stderr);
@@ -449,7 +512,11 @@ static int pb_async(void)
 static void pb_publish(void)
 {
     InterlockedExchange(&s_ring_tail, s_ring_tail_local);
+#ifdef __EMSCRIPTEN__
+    emscripten_atomic_notify((void *)&s_ring_tail, 1);
+#else
     if (s_rt_sleeping) SetEvent(s_ring_wake);   /* (it re-checks the tail after saying it sleeps) */
+#endif
 }
 static void pb_emit(uint32_t subch, uint32_t method, uint32_t param)
 {
@@ -522,6 +589,16 @@ static void pb_emit_block(uint32_t hdr, const uint32_t *w, uint32_t n)
 }
 /* nothing recorded is still to be executed (the title's GPU-wait watchdog) */
 int xbox_PbRingEmpty(void) { return !s_async || s_ring_head == s_ring_tail; }
+#ifdef __EMSCRIPTEN__
+void xbox_WebReportPushBuffer(void)
+{
+    LONG head = s_ring_head;
+    LONG tail = s_ring_tail;
+    uint32_t method = s_ring && head != tail ? s_ring[2 * head] : 0;
+    fprintf(stderr, "  [WEB GPU] push buffer head=%u tail=%u method=%08X\n",
+            (unsigned)head, (unsigned)tail, method);
+}
+#endif
 /* (1.9.5) A wait for the render thread to get further, instead of spinning:
  * woken when it has run what it was given (or at most ms later). The game's
  * waits for the GPU (D3D's block-on-time) used to yield in a loop and kept a

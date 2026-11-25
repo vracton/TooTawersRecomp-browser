@@ -1,6 +1,6 @@
 # The Two Towers Recompiled
 
-A native PC port of *The Lord of the Rings: The Two Towers* (Xbox, USA, 2002), made by static recompilation. It uses your own USA Xbox disc image or extracted disc folder.
+A browser port of *The Lord of the Rings: The Two Towers* (Xbox, USA, 2002), made by static recompilation. It runs from your extracted USA Xbox disc folder.
 
 This checkout runs the retail single-player campaign with PC controls and display options. The retail roster and difficulty choices are available through the original progression. Keyboard and mouse, modern controllers, movie skipping, and the settings overlay remain available.
 
@@ -16,8 +16,9 @@ python generate.py path/to/extracted/game
 
 ## Browser build
 
-Activate the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html)
-and build with CMake and Ninja.
+Activate [Emscripten SDK 7.0.1](https://emscripten.org/docs/getting_started/downloads.html)
+and build with CMake and Ninja. The browser build uses this version's WasmFS
+interface for the game's sparse raw partitions.
 
 ```sh
 emcmake cmake -S twotowers -B build-web -G Ninja -DCMAKE_BUILD_TYPE=Release

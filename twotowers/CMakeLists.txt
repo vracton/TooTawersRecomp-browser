@@ -141,6 +141,8 @@ if(EMSCRIPTEN)
         -O1
         -pthread
         -sPROXY_TO_PTHREAD
+        -sOFFSCREENCANVAS_SUPPORT
+        "-sOFFSCREENCANVASES_TO_PTHREAD=''"
         -sOFFSCREEN_FRAMEBUFFER
         -sMAX_WEBGL_VERSION=2
         -sALLOW_MEMORY_GROWTH
@@ -155,6 +157,7 @@ if(EMSCRIPTEN)
         -g2
         -sASSERTIONS=1
         -sEXPORTED_RUNTIME_METHODS=FS,callMain,HEAPU8
+        "SHELL:--embed-file \"${CMAKE_CURRENT_SOURCE_DIR}/resources/fonts@/fonts\""
     )
     set_target_properties(${PROJECT_NAME} PROPERTIES SUFFIX ".mjs")
     foreach(asset index.html player.css player.mjs persistence.mjs audio.mjs pcm-player.mjs)

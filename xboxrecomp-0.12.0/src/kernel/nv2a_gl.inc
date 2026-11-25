@@ -3632,8 +3632,9 @@ static void gpu_present(uint32_t base, uint32_t pitch)
 #endif
     frame_limit();
 #ifdef __EMSCRIPTEN__
-    emscripten_webgl_commit_frame();
-    MAIN_THREAD_ASYNC_EM_ASM({ globalThis.twoTowersGpuPresent?.(); });
+    if (!web_offscreen)
+        emscripten_webgl_commit_frame();
+    MAIN_THREAD_ASYNC_EM_ASM({ globalThis.twoTowersGpuPresent?.($0); }, web_offscreen);
 #else
     SDL_GL_SwapWindow(g_win);
 #endif

@@ -18,6 +18,9 @@
 #include "win32_compat.h"
 
 #include <pthread.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten/threading.h>
+#endif
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
@@ -810,11 +813,10 @@ static void *thread_trampoline(void *arg)
     return NULL;
 }
 
-HANDLE CreateThread(LPSECURITY_ATTRIBUTES sa, SIZE_T stackSize,
-                    LPTHREAD_START_ROUTINE start, LPVOID param,
-                    DWORD flags, LPDWORD threadId)
+static HANDLE create_thread(SIZE_T stackSize, LPTHREAD_START_ROUTINE start,
+                            LPVOID param, DWORD flags, LPDWORD threadId,
+                            const char *canvas)
 {
-    (void)sa;
     w32_object *o = obj_alloc(K_THREAD);
     o->start         = start;
     o->start_param   = param;
@@ -829,7 +831,10 @@ HANDLE CreateThread(LPSECURITY_ATTRIBUTES sa, SIZE_T stackSize,
      * size of 0 inherits. Same here (address space only until touched). */
 #ifdef __EMSCRIPTEN__
     pthread_attr_setstacksize(&attr, stackSize < 65536 ? (2u << 20) : stackSize);
+    if (canvas)
+        emscripten_pthread_attr_settransferredcanvases(&attr, canvas);
 #else
+    (void)canvas;
     pthread_attr_setstacksize(&attr, stackSize < 65536 ? (64u << 20) : stackSize);
 #endif
 
@@ -848,6 +853,21 @@ HANDLE CreateThread(LPSECURITY_ATTRIBUTES sa, SIZE_T stackSize,
     if (threadId) *threadId = o->tid;
     return (HANDLE)o;
 }
+
+HANDLE CreateThread(LPSECURITY_ATTRIBUTES sa, SIZE_T stackSize,
+                    LPTHREAD_START_ROUTINE start, LPVOID param,
+                    DWORD flags, LPDWORD threadId)
+{
+    (void)sa;
+    return create_thread(stackSize, start, param, flags, threadId, NULL);
+}
+
+#ifdef __EMSCRIPTEN__
+HANDLE w32_CreateCanvasThread(LPTHREAD_START_ROUTINE start)
+{
+    return create_thread(0, start, NULL, 0, NULL, "#gpu-canvas");
+}
+#endif
 
 VOID ExitThread(DWORD exitCode)
 {

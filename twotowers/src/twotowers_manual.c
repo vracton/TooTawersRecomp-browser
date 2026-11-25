@@ -975,6 +975,10 @@ void tt_dump_dev(void)
     if (!dev) return;
     tt_dbg("  [DEVSTATE] PUT %08X GET %08X issued %u done %u flags %08X put %08X\n", MEM32(0xFD800040u), MEM32(0xFD800044u), MEM32(dev + 0x30),
            MEM32(MEM32(dev + 0x34)), MEM32(dev + 8), MEM32(dev));
+#ifdef __EMSCRIPTEN__
+    extern void xbox_WebReportPushBuffer(void);
+    xbox_WebReportPushBuffer();
+#endif
     {
         extern volatile unsigned g_vblank_claimed, g_vblank_declined, g_apu_irq_claimed, g_apu_irq_declined;
         tt_dbg("  [DEVSTATE] vblank handler ran %u times (%u from the interrupt)\n", tt_vbh_calls, tt_vbh_isr);
