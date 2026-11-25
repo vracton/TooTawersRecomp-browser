@@ -919,8 +919,17 @@ NTSTATUS __stdcall xbox_NtCreateFile(
     /* A partition device opened as a directory: the directory holding its
      * image (see the Win32 backend). */
     if ((CreateOptions & XBOX_FILE_DIRECTORY_FILE) && stat(host_path, &st) == 0 && !S_ISDIR(st.st_mode)) {
-        char *slash = strrchr(host_path, '/');
-        if (slash && slash != host_path) *slash = 0;
+#ifdef __EMSCRIPTEN__
+        if (strncmp(host_path, "/virtual_disk/", sizeof("/virtual_disk/") - 1) == 0) {
+            extern const char *xbox_WebSaveDirectory(void);
+            snprintf(host_path, sizeof(host_path), "%s", xbox_WebSaveDirectory());
+        } else
+#endif
+        {
+            char *slash = strrchr(host_path, '/');
+            if (slash && slash != host_path)
+                *slash = 0;
+        }
     }
 
     if (CreateOptions & XBOX_FILE_DIRECTORY_FILE) {

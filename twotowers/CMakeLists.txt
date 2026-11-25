@@ -132,7 +132,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 )
 
 if(EMSCRIPTEN)
-    target_sources(${PROJECT_NAME} PRIVATE src/web_host.c)
+    target_sources(${PROJECT_NAME} PRIVATE src/web_host.c src/web_partitions.cpp)
+    target_include_directories(${PROJECT_NAME} PRIVATE "${EMSCRIPTEN_ROOT_PATH}/system/lib/wasmfs")
     target_link_libraries(${PROJECT_NAME} PRIVATE SDL2::SDL2 m)
     target_compile_options(${PROJECT_NAME} PRIVATE
         -Wno-incompatible-pointer-types -Wno-int-conversion -Wno-format)

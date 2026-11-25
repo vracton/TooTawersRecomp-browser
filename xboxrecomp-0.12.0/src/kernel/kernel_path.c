@@ -588,6 +588,12 @@ translate:
 
 static char s_game_dir[MAX_PATH];
 static char s_save_dir[MAX_PATH];
+#ifdef __EMSCRIPTEN__
+const char *xbox_WebSaveDirectory(void)
+{
+    return s_save_dir;
+}
+#endif
 static BOOL s_initialized = FALSE;
 const char *(*xbox_path_redirect)(const char *xbox_path) = NULL;
 

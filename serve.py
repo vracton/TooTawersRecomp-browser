@@ -14,18 +14,6 @@ from generate import XBE_SHA256, find_xbe
 
 ROOT = Path(__file__).resolve().parent
 RANGE = re.compile(r"bytes=(\d*)-(\d*)")
-PARTITION_SECTORS = (0, 0x465400, 0xFA000, 0x177000, 0x177000, 0x177000)
-
-
-class EmptyPartition:
-    def __init__(self, size):
-        self.size = size
-
-    def seek(self, offset, whence=0):
-        return self.size if whence == 2 else offset
-
-    def read(self, count):
-        return bytes(count)
 
 
 class GameHandler(BaseHTTPRequestHandler):
@@ -53,15 +41,6 @@ class GameHandler(BaseHTTPRequestHandler):
         route = unquote(urlsplit(self.path).path)
         if route == "/disc.json":
             self.send_manifest(body)
-            return
-
-        partition = re.fullmatch(r"/partitions/+partition([1-5])\.img", route)
-        if partition:
-            size = PARTITION_SECTORS[int(partition[1])] * 512
-            try:
-                self.send_file(Path(route), EmptyPartition(size), body)
-            except (BrokenPipeError, ConnectionResetError):
-                pass
             return
 
         if route.startswith("/disc/"):
