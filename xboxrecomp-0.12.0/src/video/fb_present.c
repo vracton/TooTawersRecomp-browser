@@ -1023,6 +1023,11 @@ EMSCRIPTEN_KEEPALIVE void xbox_WebWheel(int steps)
 {
     InterlockedExchangeAdd(&xbox_fb_wheel, steps);
 }
+
+EMSCRIPTEN_KEEPALIVE int xbox_WebPointerFlags(void)
+{
+    return (s_rel_want && s_focus ? 1 : 0) | (xbox_fb_hide_cursor ? 2 : 0);
+}
 #endif
 /* (2.1, testing) RECOMP_KEY_SCRIPT=file: lines "ms vk held_ms" (vk in hex) -- that key down for that long, ms after the first key read */
 static volatile DWORD s_ks_t0;

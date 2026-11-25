@@ -19,10 +19,19 @@ function connectCanvas(game) {
     let frames = 0;
     let firstFrame;
     let renderer = "software";
+    let pointerFlags = 0;
     let previousFrame;
     const intervals = [];
     const started = performance.now();
     function recordFrame(now) {
+        const nextFlags = game._xbox_WebPointerFlags();
+        if (nextFlags !== pointerFlags) {
+            pointerFlags = nextFlags;
+            canvas.style.cursor = pointerFlags & 2 ? "none" : "";
+            if (!(pointerFlags & 1) && document.pointerLockElement === canvas) {
+                document.exitPointerLock();
+            }
+        }
         if (firstFrame === undefined) {
             firstFrame = now;
             launch.hidden = true;
@@ -84,7 +93,8 @@ function connectInput(game) {
     window.addEventListener("focus", () => game._xbox_WebFocus(document.activeElement === canvas));
     for (const type of ["keydown", "keyup"]) {
         canvas.addEventListener(type, (event) => {
-            if (event.altKey || event.ctrlKey || event.metaKey) {
+            if (type === "keydown" && event.key !== "Control" && event.key !== "Alt" &&
+                (event.altKey || event.ctrlKey || event.metaKey)) {
                 return;
             }
             if (event.keyCode) {
@@ -109,7 +119,12 @@ function connectInput(game) {
     }
     canvas.addEventListener("pointerdown", (event) => {
         canvas.focus();
-        canvas.setPointerCapture(event.pointerId);
+        if (document.pointerLockElement !== canvas) {
+            canvas.setPointerCapture(event.pointerId);
+            if (game._xbox_WebPointerFlags() & 1) {
+                canvas.requestPointerLock?.()?.catch(() => {});
+            }
+        }
         game._xbox_WebMouseButton(event.button, 1);
     });
     canvas.addEventListener("pointerup", (event) => game._xbox_WebMouseButton(event.button, 0));

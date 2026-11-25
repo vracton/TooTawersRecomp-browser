@@ -73,7 +73,9 @@ static HFont *font_get(int font)
     h = &s_fonts[font];
     if (!h->tried) {
         char exe[PATH_MAX], path[PATH_MAX + 64];
-#if defined(__APPLE__)
+#if defined(__EMSCRIPTEN__)
+        ssize_t n = 0;
+#elif defined(__APPLE__)
         extern int _NSGetExecutablePath(char *buf, uint32_t *bufsize);
         uint32_t es = sizeof exe;
         ssize_t n = _NSGetExecutablePath(exe, &es) == 0 ? (ssize_t)strlen(exe) : -1;
