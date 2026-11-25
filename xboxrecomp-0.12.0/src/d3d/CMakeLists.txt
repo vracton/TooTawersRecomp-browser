@@ -30,7 +30,9 @@ else()
         add_library(xbox_d3d8 STATIC
             d3d8_gl.c
         )
-        find_package(SDL2 REQUIRED)
+        if(NOT TARGET SDL2::SDL2)
+            find_package(SDL2 REQUIRED)
+        endif()
         target_include_directories(xbox_d3d8 PRIVATE ${EPOXY_INCLUDE_DIRS})
         # EPOXY_LINK_LIBRARIES, not EPOXY_LIBRARIES: the latter is the bare name
         # `epoxy`, which only resolves if EPOXY_LIBRARY_DIRS happens to be on the

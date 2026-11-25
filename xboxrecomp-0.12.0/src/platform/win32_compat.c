@@ -2049,7 +2049,9 @@ SIZE_T VirtualQuery(LPCVOID address, PMEMORY_BASIC_INFORMATION buffer, SIZE_T le
 BOOL GlobalMemoryStatusEx(LPMEMORYSTATUSEX b)
 {
     if (!b) return FALSE;
-#if defined(__APPLE__)
+#if defined(__EMSCRIPTEN__)
+    return FALSE;
+#elif defined(__APPLE__)
     /* Darwin has no sysinfo(2): physical memory comes from sysctl hw.memsize,
      * swap from vm.swapusage, the free page count from the Mach VM statistics. */
     uint64_t memsize = 0;
@@ -2268,6 +2270,13 @@ static void veh_to_uc(ucontext_t *uc, const CONTEXT *c)
 }
 #endif
 
+#if defined(__EMSCRIPTEN__)
+void xbox_WatchArm(void *host_word)
+{
+    (void)host_word;
+}
+#endif
+
 #if defined(__x86_64__) && (defined(__APPLE__) || defined(__linux__))
 /* (1.9.5) testing: write watches on guest words (xbox_WatchArm, re-armed by
  * the caller; up to 8, e.g. one word's aliases): the first write to a
@@ -2450,7 +2459,7 @@ BOOL SetThreadStackGuarantee(PULONG size) { (void)size; return TRUE; }
 /* The process's CPUs as they were at start-up: Linux has only per-thread
  * masks, and the thread asking may have been pinned to one core since (the
  * single-CPU mode pins the game's threads; Windows' process mask stays). */
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(__EMSCRIPTEN__)
 /* macOS: no affinity masks; every CPU the system has */
 BOOL GetProcessAffinityMask(HANDLE process, DWORD_PTR *procMask, DWORD_PTR *sysMask)
 {
@@ -2458,8 +2467,8 @@ BOOL GetProcessAffinityMask(HANDLE process, DWORD_PTR *procMask, DWORD_PTR *sysM
     DWORD_PTR m;
     (void)process;
     if (n < 1) n = 1;
-    if (n > 63) n = 63;
-    m = ((DWORD_PTR)1 << n) - 1;
+    if (n >= (long)(sizeof(m) * 8)) m = ~(DWORD_PTR)0;
+    else m = ((DWORD_PTR)1 << n) - 1;
     if (procMask) *procMask = m;
     if (sysMask) *sysMask = m;
     return TRUE;
@@ -2490,7 +2499,7 @@ BOOL GetProcessAffinityMask(HANDLE process, DWORD_PTR *procMask, DWORD_PTR *sysM
 #endif
 DWORD_PTR SetThreadAffinityMask(HANDLE thread, DWORD_PTR mask)
 {
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(__EMSCRIPTEN__)
     /* macOS has no thread affinity (only hints): the mask is accepted */
     (void)thread; (void)mask;
     return 1;

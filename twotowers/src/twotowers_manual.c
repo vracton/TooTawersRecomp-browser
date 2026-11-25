@@ -2580,7 +2580,7 @@ void sub_000977A0(void)
             if (k < nj && tt_lvl_ms - jt[k] < 4000u) {
                 float x, y; w = MEM32(esp + 4); memcpy(&x, &w, 4); w = MEM32(esp + 8); memcpy(&y, &w, 4);
                 tt_dbg("[SPJ] %u %08X %08X/%08X %.3f %.3f %.3f (z %+.3f)\n", tt_lvl_ms, obj, c, MEM32(esp + 0x14), x, y, z, z - oz);
-#if !defined(_WIN32)
+#if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
                 if (z - oz < -0.5f) {   /* a big step down: the host call stack (tools/wsym-style: offsets from tt_frametime) */
                     extern int backtrace(void **, int);
                     void *bt[24]; char b[600]; int q, n = 0, k2 = backtrace(bt, 24);
@@ -2595,7 +2595,7 @@ void sub_000977A0(void)
                 w = MEM32(esp + 4); memcpy(&x, &w, 4); w = MEM32(esp + 8); memcpy(&y, &w, 4); w = MEM32(esp + 12); memcpy(&z, &w, 4);
                 w = MEM32(obj + 0xF8); memcpy(&oz, &w, 4);
                 tt_dbg("[SP] %u %08X %.3f %.3f %.3f (z %+.3f)\n", tt_lvl_ms, c, x, y, z, z - oz);
-#if !defined(_WIN32)
+#if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
                 {   static uint32_t f0 = 1, f1; if (f0 == 1) { const char *e = getenv("TT_SPLOG_FROM"); f0 = e ? (uint32_t)atoi(e) : 0; e = getenv("TT_SPLOG_TO"); f1 = e ? (uint32_t)atoi(e) : 0; }
                     if (tt_lvl_ms >= f0 && tt_lvl_ms <= f1) {
                         extern int backtrace(void **, int);

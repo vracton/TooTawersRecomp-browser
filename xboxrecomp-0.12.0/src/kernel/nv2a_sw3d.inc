@@ -29,7 +29,16 @@
  */
 
 #include <math.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten/emscripten.h>
+static unsigned long long nv2a_perf_clock(void)
+{
+    return (unsigned long long)(emscripten_get_now() * 1000000.0);
+}
+#else
 #include <x86intrin.h>
+#define nv2a_perf_clock() __rdtsc()
+#endif
 
 /* (1.9.5) Where the render thread's time goes, for the log's [PERFRT] line:
  * processor cycles (rdtsc, a few ns a reading) per phase of a draw. */
@@ -42,8 +51,8 @@ static unsigned g_pt_raw_n, g_pt_old_n;
 static int g_pt_on = -1;
 static int pt_on_init(void) { const char *e = getenv("RECOMP_PERFRT"); g_pt_on = e && *e && *e != '0'; return g_pt_on; }
 #define PT_ON() (g_pt_on > 0 || (g_pt_on < 0 && pt_on_init()))
-#define PT_T0(v) unsigned long long v = PT_ON() ? __rdtsc() : 0
-#define PT_ADD(i, v) ((void)(g_pt_on > 0 ? (g_pt[i] += __rdtsc() - (v)) : 0))
+#define PT_T0(v) unsigned long long v = PT_ON() ? nv2a_perf_clock() : 0
+#define PT_ADD(i, v) ((void)(g_pt_on > 0 ? (g_pt[i] += nv2a_perf_clock() - (v)) : 0))
 
 #include "nv2a_copy.h"
 /* (1.9.5) what changed since the last draw (pb_note_change, nv2a_pb_exec.c) */

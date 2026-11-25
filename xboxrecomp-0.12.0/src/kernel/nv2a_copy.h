@@ -3,6 +3,7 @@
 #define NV2A_COPY_H
 #include <stdint.h>
 #include <string.h>
+#if defined(__SSE2__) || defined(_M_X64)
 #include <emmintrin.h>
 /* Copies on the pushbuffer path (the game thread recording, the render
  * thread drawing). Into the graphics card's mapped
@@ -38,4 +39,15 @@ static inline void rt_copy(void *dst, const void *src, size_t n)
     while (n >= 4) { uint32_t v; memcpy(&v, s, 4); memcpy(d, &v, 4); d += 4; s += 4; n -= 4; }
     while (n) { *d++ = *s++; n--; }
 }
+#else
+static inline void rt_copy_wc(void *dst, const void *src, size_t size)
+{
+    memcpy(dst, src, size);
+}
+
+static inline void rt_copy(void *dst, const void *src, size_t size)
+{
+    memcpy(dst, src, size);
+}
+#endif
 #endif

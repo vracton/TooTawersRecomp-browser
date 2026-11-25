@@ -46,7 +46,9 @@ else()
     # implemented here (kernel_crypto.c), so no crypto library is needed.
     # SDL2: the OpenGL renderer (nv2a_gl.inc) gets its context and entry
     # points through it.
-    find_package(SDL2 REQUIRED)
+    if(NOT TARGET SDL2::SDL2)
+        find_package(SDL2 REQUIRED)
+    endif()
     target_link_libraries(xbox_kernel PUBLIC platform SDL2::SDL2)
 endif()
 

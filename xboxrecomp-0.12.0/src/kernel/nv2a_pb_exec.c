@@ -2660,7 +2660,7 @@ void nv2a_pb_exec_method(uint32_t subch, uint32_t method, uint32_t param)
                     {   /* (1.9.5) the render thread's draws by phase (rdtsc, calibrated
                          * against the performance counter over the same second) */
                         static unsigned long long tsc0; static long long q0;
-                        unsigned long long tsc = __rdtsc();
+                        unsigned long long tsc = nv2a_perf_clock();
                         if (tsc0 && nf && qn.QuadPart > q0) {
                             double cpms = (double)(tsc - tsc0) / ((double)(qn.QuadPart - q0) * 1000.0 / (double)qf.QuadPart);
                             double f = cpms > 0 ? 1.0 / cpms / nf : 0;

@@ -604,7 +604,11 @@ int   _putenv_s(const char *name, const char *value);
 
 /* ---- Odds and ends the runtime uses ----------------------------------- */
 #define MemoryBarrier()   __sync_synchronize()
-#define YieldProcessor()  __builtin_ia32_pause()
+#if defined(__i386__) || defined(__x86_64__)
+#define YieldProcessor() __builtin_ia32_pause()
+#else
+#define YieldProcessor() __atomic_signal_fence(__ATOMIC_ACQ_REL)
+#endif
 #define _ReadWriteBarrier() __asm__ __volatile__("" ::: "memory")
 BOOL GetProcessAffinityMask(HANDLE process, DWORD_PTR *procMask, DWORD_PTR *sysMask);
 DWORD_PTR SetThreadAffinityMask(HANDLE thread, DWORD_PTR mask);

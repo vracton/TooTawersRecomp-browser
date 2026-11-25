@@ -132,7 +132,7 @@ uint32_t g_apu_mring[64][4]; unsigned g_apu_mn;
 static void voice_off(MCPXAPUState *d, uint16_t v)
 {
     { extern void *g_apu_offra[]; g_apu_offra[v] = __builtin_return_address(0); }
-#if !defined(_WIN32)
+#if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
     {   /* testing: RECOMP_APU_OFFBT=<hex base> -- who turns that sound off (host call stack, offsets from voice_off) */
         static long want = -2;
         if (want == -2) { const char *e = getenv("RECOMP_APU_OFFBT"); want = e ? strtol(e, NULL, 16) : -1; }

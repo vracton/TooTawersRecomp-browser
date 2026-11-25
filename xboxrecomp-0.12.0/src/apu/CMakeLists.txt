@@ -42,6 +42,8 @@ if(WIN32)
     target_link_libraries(xbox_apu PRIVATE platform kernel32 winmm ole32)   # XAudio2: loaded at run time
 else()
     # Linux: platform layer (Win32 primitives on POSIX) + SDL2 audio + libm
-    find_package(SDL2 REQUIRED)
+    if(NOT TARGET SDL2::SDL2)
+        find_package(SDL2 REQUIRED)
+    endif()
     target_link_libraries(xbox_apu PRIVATE platform xbox_input SDL2::SDL2 m)   # xbox_input: xbox_SDLInitLock
 endif()

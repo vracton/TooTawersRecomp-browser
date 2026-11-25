@@ -36,6 +36,13 @@ add_compile_definitions(
     XBOX_LOW_AREA_BASE=0x00920000
 )
 
+if(EMSCRIPTEN)
+    add_library(SDL2::SDL2 INTERFACE IMPORTED GLOBAL)
+    target_compile_options(SDL2::SDL2 INTERFACE --use-port=sdl2)
+    target_link_options(SDL2::SDL2 INTERFACE --use-port=sdl2)
+    add_compile_options(-pthread)
+endif()
+
 # ── xboxrecomp toolkit ──────────────────────────────────────────
 #
 # Option A: xboxrecomp as a subdirectory (simplest)
@@ -103,7 +110,27 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${XBOXRECOMP_DIR}/include
 )
 
-if(WIN32)
+if(EMSCRIPTEN)
+    target_link_libraries(${PROJECT_NAME} PRIVATE SDL2::SDL2 m)
+    target_compile_options(${PROJECT_NAME} PRIVATE
+        -Wno-incompatible-pointer-types -Wno-int-conversion -Wno-format)
+    target_link_options(${PROJECT_NAME} PRIVATE
+        -pthread
+        -sPROXY_TO_PTHREAD
+        -sOFFSCREENCANVAS_SUPPORT
+        -sOFFSCREEN_FRAMEBUFFER
+        -sMAX_WEBGL_VERSION=2
+        -sALLOW_MEMORY_GROWTH
+        -sINITIAL_MEMORY=268435456
+        -sSTACK_SIZE=67108864
+        -sWASMFS
+        -sFORCE_FILESYSTEM
+        -sMODULARIZE
+        -sEXPORT_ES6
+        -sEXPORTED_RUNTIME_METHODS=FS,callMain,HEAPU8
+    )
+    set_target_properties(${PROJECT_NAME} PROPERTIES SUFFIX ".mjs")
+elseif(WIN32)
     # Windows SDK libraries needed at link time
     # (d3d11.dll and dxgi.dll are loaded at run time: the system's, or
     # DXVK's for renderer=vulkan -- xboxrecomp src/platform/d3d11_dyn.h)
@@ -123,14 +150,6 @@ else()
     target_link_libraries(${PROJECT_NAME} PRIVATE SDL2::SDL2 ${CMAKE_DL_LIBS} m pthread)
     target_compile_options(${PROJECT_NAME} PRIVATE -Wno-incompatible-pointer-types
         -Wno-int-conversion -Wno-format)
-    # A few guest functions carry the names of the C library's (the XDK CRT's
-    # close/write/lseek/isatty): in one ELF executable they would take the
-    # place of the real ones for the host code and for every shared library.
-    # The generated code gets them under other names, and nothing in the
-    # executable is exported to the libraries it loads.
-    set(TT_GUEST_RENAMES "close=tt_guest_close;write=tt_guest_write;lseek=tt_guest_lseek;isatty=tt_guest_isatty")
-    set_source_files_properties(${RECOMP_GEN_SOURCES} src/twotowers_manual.c src/recomp_manual.c
-        PROPERTIES COMPILE_DEFINITIONS "${TT_GUEST_RENAMES}")
     if(APPLE)
         # macOS (Intel, or Apple silicon through Rosetta 2: the build is
         # x86-64 -- see the README's macOS section). Mach-O's two-level
@@ -150,6 +169,17 @@ else()
         set_target_properties(${PROJECT_NAME} PROPERTIES
             BUILD_WITH_INSTALL_RPATH ON INSTALL_RPATH "$ORIGIN/lib")
     endif()
+endif()
+
+if(NOT WIN32)
+    # A few guest functions carry the names of the C library's (the XDK CRT's
+    # close/write/lseek/isatty): in one ELF executable they would take the
+    # place of the real ones for the host code and for every shared library.
+    # The generated code gets them under other names, and nothing in the
+    # executable is exported to the libraries it loads.
+    set(TT_GUEST_RENAMES "close=tt_guest_close;write=tt_guest_write;lseek=tt_guest_lseek;isatty=tt_guest_isatty")
+    set_source_files_properties(${RECOMP_GEN_SOURCES} src/twotowers_manual.c src/recomp_manual.c
+        PROPERTIES COMPILE_DEFINITIONS "${TT_GUEST_RENAMES}")
 endif()
 
 # MSVC-specific: large address aware, increase section limit for big generated files
@@ -181,7 +211,7 @@ endif()
 
 set_target_properties(${PROJECT_NAME} PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 # Use the bundled C++ runtime on older Linux systems.
-if(UNIX AND NOT APPLE)
+if(UNIX AND NOT APPLE AND NOT EMSCRIPTEN)
     target_link_options(${PROJECT_NAME} PRIVATE -static-libstdc++ -static-libgcc)
 endif()
 # MinGW (cross) builds: equivalents of the MSVC options above.
