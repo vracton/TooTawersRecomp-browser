@@ -5,6 +5,7 @@ A browser port of *The Lord of the Rings: The Two Towers* (Xbox, USA, 2002), mad
 This checkout runs the retail single-player campaign with PC controls and display options. The retail roster and difficulty choices are available through the original progression. Keyboard and mouse, modern controllers, movie skipping, and the settings overlay remain available.
 
 See [RETAIL_PORT.md](RETAIL_PORT.md) for the feature inventory, implementation notes, and verification. [CHANGES.md](CHANGES.md) records earlier upstream releases.
+[BROWSER_PORT.md](BROWSER_PORT.md) records the browser architecture, development milestones, and verification gaps.
 
 ## Generating the game code
 
