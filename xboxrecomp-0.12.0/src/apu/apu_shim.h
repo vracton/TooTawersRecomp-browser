@@ -116,7 +116,13 @@ static inline uint8_t *apu_phys_ptr(hwaddr addr)
     uint32_t page = pa >> 12;
     if (page != last_page) {
         last_page = page;
+#ifdef __EMSCRIPTEN__
+        extern uintptr_t xbox_WebGuestAddress(uint32_t va);
+        last_base = xbox_PhysIsIdentity(pa) ? g_apu_ram_ptr :
+            (uint8_t *)xbox_WebGuestAddress(0x80000000u);
+#else
         last_base = g_apu_ram_ptr + (xbox_PhysIsIdentity(pa) ? 0 : 0x80000000u);
+#endif
     }
     return last_base + pa;
 }
