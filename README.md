@@ -42,21 +42,25 @@ measure process CPU and memory separately.
 
 On Windows with Edge and an AMD Radeon 780M, the browser reached the retail
 title screen, main menu, Normal difficulty, the skippable Bink intro, and
-the real-time prologue. A binary file in the save directory and an INI file
-survived a reload through IndexedDB. Campaign completion and a save created
-from gameplay are still unverified.
+the first playable battle with keyboard movement. A binary file in the save
+directory and an INI file survived a reload through IndexedDB. Campaign
+completion and a save created from gameplay are still unverified.
 
 | Sample | Result |
 | --- | --- |
-| Browser startup | First frame in 9.5 s after the Wasm module was ready |
-| Browser prologue | 9.0 FPS over the last 300 presents, 605 ms at the 95th percentile |
-| Browser mixed run | 225 renderer CPU-seconds and 267 GPU-process CPU-seconds over 98 wall-clock seconds, 442.5 MiB of Wasm linear memory by the prologue |
+| Browser startup | First frame in 6.5 s after the Wasm module was ready |
+| Browser title and menu | Around 46 FPS |
+| Browser opening battle | 21.9 FPS over the last 300 presents, 63 ms at the 95th percentile |
+| Browser mixed run | 256 renderer CPU-seconds and 205 GPU-process CPU-seconds over 99 wall-clock seconds, 442.5 MiB of Wasm linear memory by the battle |
 | Native title and menu sample | Around 60 FPS at 640×480, 56 CPU-seconds over 26 wall-clock seconds, 389 MiB working set |
 
-The samples cover different parts of the game. The browser's 3D prologue
-still falls short of its 30 FPS target. The profile recorded long stalls
-during streamed buffer uploads and hundreds of audio underruns by the end
-of the prologue sample.
+The samples cover different parts of the game. In a sampled 10-second battle
+segment, the game clock kept pace with real time while rendering below its
+30 FPS target. The earlier browser profile measured 9.0 FPS and 605 ms at the
+95th percentile during the transition into the real-time prologue. Giving
+WebGL uniform blocks separate buffers removed the worst recurring upload
+stalls. The latest run logged 1,319 audio worklet underruns across startup,
+menus, intro, and battle.
 
 ## Desktop reference build
 

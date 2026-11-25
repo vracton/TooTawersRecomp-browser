@@ -727,6 +727,7 @@ static GLuint gpu_tex2d(uint32_t w, uint32_t h, int depth)
 static GLuint g_one_tex; static uint32_t g_one_w, g_one_h;
 static GLuint g_present_smp, g_copy_smp;
 static GLuint g_vao, g_vao_x, g_vao_empty;
+static uint32_t g_hw_attribs;
 static GLuint g_tex_black;                 /* what a stage reads from a target being drawn */
 
 /* the fixed shaders' programs (gpu_init) */
@@ -1760,6 +1761,7 @@ static int gpu_init(void)
     glGenVertexArrays(1, &g_vao);
     glGenVertexArrays(1, &g_vao_x);
     glGenVertexArrays(1, &g_vao_empty);
+    g_hw_attribs = 0;
     {
         /* what a stage reads when its texture is the target being drawn
          * (D3D unbinds such a view, and reads give 0) */
@@ -3063,12 +3065,15 @@ static int gpu_batch_hw(HwVp *hv, uint32_t nverts)
         g_sh.vao = 2;
         vb_at = gpu_ring(&g_rvbx, g_xin, (uint32_t)(need * sizeof(float)), stride);
         if (vb_at == 0xFFFFFFFFu) return 1;
-        for (k = 0; k < 16; k++) {
-            if (k < hv->nin) {
+        for (k = 0; k < hv->nin; k++) {
+            if (k >= g_hw_attribs)
                 glEnableVertexAttribArray(k);
-                glVertexAttribPointer(k, 4, GL_FLOAT, GL_FALSE, (GLsizei)stride, (const void *)(uintptr_t)(vb_at + 16 * k));
-            } else glDisableVertexAttribArray(k);
+            glVertexAttribPointer(k, 4, GL_FLOAT, GL_FALSE, (GLsizei)stride,
+                                  (const void *)(uintptr_t)(vb_at + 16 * k));
         }
+        for (; k < g_hw_attribs; k++)
+            glDisableVertexAttribArray(k);
+        g_hw_attribs = hv->nin;
     } else {
         glBindVertexArray(g_vao_empty);
         g_sh.vao = 3;
