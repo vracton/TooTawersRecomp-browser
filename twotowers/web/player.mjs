@@ -6,6 +6,7 @@ const gpuCanvas = document.querySelector("#gpu-canvas");
 const launch = document.querySelector("#launch");
 const play = document.querySelector("#play");
 const status = document.querySelector("#status");
+const profiler = document.querySelector("#profiler");
 
 function showStatus(message) {
     launch.hidden = false;
@@ -70,7 +71,7 @@ function connectCanvas(game) {
         recordFrame(now);
     };
 
-    globalThis.twoTowersUsage = () => {
+    function readUsage() {
         const ordered = [...intervals].sort((a, b) => a - b);
         const sum = ordered.reduce((total, interval) => total + interval, 0);
         return {
@@ -83,7 +84,64 @@ function connectCanvas(game) {
             audioUnderruns: globalThis.twoTowersAudioOutput?.underruns() ?? null,
             renderer,
         };
+    }
+
+    globalThis.twoTowersUsage = readUsage;
+    return readUsage;
+}
+
+function connectProfiler(readUsage) {
+    const renderers = {
+        software: "Software",
+        webgl2: "WebGL 2",
+        "webgl2-worker": "WebGL 2 (worker)",
     };
+    const fields = Object.fromEntries(
+        [...profiler.querySelectorAll("[data-metric]")].map(field => [field.dataset.metric, field]),
+    );
+    let timer;
+
+    function display(usage, fps) {
+        const values = {
+            fps: fps === null ? "—" : fps.toFixed(1),
+            frameTime: usage.frameTimeP95Ms === null ? "—" : `${usage.frameTimeP95Ms.toFixed(1)} ms`,
+            memory: `${(usage.wasmMemoryBytes / (1024 * 1024)).toFixed(1)} MiB`,
+            underruns: usage.audioUnderruns?.toLocaleString() ?? "—",
+            renderer: usage.frames ? renderers[usage.renderer] : "—",
+        };
+        for (const [metric, value] of Object.entries(values)) {
+            if (fields[metric].textContent !== value) {
+                fields[metric].textContent = value;
+            }
+        }
+    }
+
+    function updateSampling() {
+        clearInterval(timer);
+        if (!profiler.open || document.hidden) {
+            return;
+        }
+
+        let previous = readUsage();
+        display(previous, null);
+        timer = setInterval(() => {
+            const usage = readUsage();
+            const elapsed = usage.runningMs - previous.runningMs;
+            const fps = usage.frames && elapsed > 0 ? 1000 * (usage.frames - previous.frames) / elapsed : null;
+            display(usage, fps);
+            previous = usage;
+        }, 1000);
+    }
+
+    profiler.querySelector("summary").addEventListener("pointerdown", event => {
+        if (document.activeElement === canvas) {
+            event.preventDefault();
+        }
+    });
+    profiler.addEventListener("toggle", updateSampling);
+    document.addEventListener("visibilitychange", updateSampling);
+    profiler.hidden = false;
+    updateSampling();
 }
 
 function connectInput(game) {
@@ -175,7 +233,7 @@ play.addEventListener("click", async () => {
                 persist();
             }
         });
-        connectCanvas(game);
+        connectProfiler(connectCanvas(game));
         connectInput(game);
         canvas.focus();
         const profile = new URLSearchParams(location.search).has("profile");

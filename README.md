@@ -33,6 +33,10 @@ the same profile.
 
 ## Browser verification and performance
 
+The top-right **Profiler** updates once a second with FPS, 95th-percentile
+frame time, allocated Wasm memory, audio underruns, and the active renderer.
+Click its heading to collapse or reopen it.
+
 Run `window.twoTowersUsage()` in the browser console after launching to see
 time to the first frame, FPS and 95th-percentile frame interval across the
 last 300 presents, Wasm linear memory, and audio underruns. Load `/?profile`

@@ -53,3 +53,44 @@ button {
     max-width: 34rem;
     padding-inline: 1rem;
 }
+
+#profiler {
+    position: fixed;
+    inset: 0.5rem 0.5rem auto auto;
+    z-index: 1;
+    box-sizing: border-box;
+    max-inline-size: calc(100% - 1rem);
+    border: 1px solid #74654c;
+    border-radius: 0.5rem;
+    background: rgb(19 16 12 / 94%);
+    color: #f6eee0;
+    font-size: 0.75rem;
+    line-height: 1.45;
+}
+
+#profiler summary {
+    padding: 0.4rem 0.65rem;
+    color: #f6d798;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+#profiler summary:focus-visible {
+    outline: 2px solid #f6d798;
+    outline-offset: 2px;
+}
+
+#profiler dl {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.15rem 0.85rem;
+    min-inline-size: min(11.5rem, 65vw);
+    margin: 0;
+    padding: 0.15rem 0.65rem 0.55rem;
+}
+
+#profiler dd {
+    margin: 0;
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+}

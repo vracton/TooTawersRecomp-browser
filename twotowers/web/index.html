@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>The Two Towers Recompiled</title>
+    <title>The Lord of the Rings: The Two Towers</title>
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="player.css">
     <script type="module" src="player.mjs"></script>
@@ -16,6 +16,21 @@
             <button id="play" type="button">Play</button>
             <p id="status" role="status" hidden></p>
         </div>
+        <details id="profiler" open hidden>
+            <summary>Profiler</summary>
+            <dl>
+                <dt title="Game frames presented per second">FPS</dt>
+                <dd data-metric="fps">—</dd>
+                <dt title="95th percentile over the last 300 frame intervals">Frame time p95</dt>
+                <dd data-metric="frameTime">—</dd>
+                <dt title="Allocated WebAssembly linear memory">Wasm memory</dt>
+                <dd data-metric="memory">—</dd>
+                <dt>Audio underruns</dt>
+                <dd data-metric="underruns">—</dd>
+                <dt>Renderer</dt>
+                <dd data-metric="renderer">—</dd>
+            </dl>
+        </details>
     </main>
 </body>
 </html>
