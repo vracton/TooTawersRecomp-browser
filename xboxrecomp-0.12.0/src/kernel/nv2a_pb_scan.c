@@ -34,6 +34,7 @@ extern const char *recomp_cgetenv(const char *name);
 #define XBOX_CONTIG_BASE 0x80000000u  /* kernel.h */
 #endif
 
+#include "xbox_memory_layout.h"
 extern ptrdiff_t xbox_GetMemoryOffset(void);
 /* (2.0.3) where the pushbuffer's memory ends: the window and the memory above
  * it, when that is mapped (a port's overflow can hold a mesh's own commands) */
@@ -168,7 +169,6 @@ void nv2a_pb_scan_report(void)
 
 void nv2a_pb_scan(uint32_t start_va, uint32_t end_va)
 {
-    const uint8_t *mem = (const uint8_t *)xbox_GetMemoryOffset();
     uint32_t va = start_va;
     int wrap_pending = 0;
     uint32_t words = 0, jumps = 0, unknown = 0;
@@ -209,7 +209,7 @@ void nv2a_pb_scan(uint32_t start_va, uint32_t end_va)
 
             if (!outside && va >= end_va)
                 break;
-            w = *(const uint32_t *)(mem + va);
+            w = *(const uint32_t *)xbox_GuestAddress(va);
             va += 4;
             words++;
 
@@ -275,7 +275,7 @@ void nv2a_pb_scan(uint32_t start_va, uint32_t end_va)
                      * can never disagree about what the stream said. */
                     if (s_exec_enabled)
                         nv2a_pb_exec_method(subch, m,
-                                            *(const uint32_t *)(mem + va));
+                                            *(const uint32_t *)xbox_GuestAddress(va));
                     va += 4;
                     words++;
                 }
@@ -565,7 +565,6 @@ void nv2a_pb_run(uint32_t put_phys, uint32_t init_get_phys)
 static void nv2a_pb_run_(uint32_t put_phys, uint32_t init_get_phys)
 {
     if (s_async <= 0) g_pb_runs++;   /* (recorded: the render thread counts its runs) */
-    const uint8_t *mem = (const uint8_t *)xbox_GetMemoryOffset();
     uint32_t put = XBOX_CONTIG_BASE | (put_phys & 0x0FFFFFFFu);
     uint32_t words = 0;
     static int trace = -1;
@@ -619,20 +618,20 @@ static void nv2a_pb_run_(uint32_t put_phys, uint32_t init_get_phys)
         if (raw) {   /* (1.9.5: see PB_RAW_HDR) whole methods up to the next jump, call, return or odd word */
             uint32_t at = s_get, lim = (put > s_get) ? put : PB_MEM_END, e;
             while (at < lim && at - s_get < (64u << 10) * 4u) {
-                uint32_t h2 = *(const uint32_t *)(mem + at);
+                uint32_t h2 = *(const uint32_t *)xbox_GuestAddress(at);
                 if ((h2 & 0xE0030003u) != 0 && (h2 & 0xE0030003u) != 0x40000000u) break;   /* not a method header */
                 e = at + 4 + ((h2 >> 18) & 0x7FFu) * 4;
                 if (e > lim) break;   /* (its words past PUT or memory: the old way) */
                 at = e;
             }
             if (at != s_get) {
-                pb_emit_block(PB_RAW_HDR, (const uint32_t *)(mem + s_get), (at - s_get) / 4);
+                pb_emit_block(PB_RAW_HDR, (const uint32_t *)xbox_GuestAddress(s_get), (at - s_get) / 4);
                 words += (at - s_get) / 4;
                 s_get = at;
                 continue;
             }
         }
-        w = *(const uint32_t *)(mem + s_get);
+        w = *(const uint32_t *)xbox_GuestAddress(s_get);
         words++;
 
         if ((w & 3u) == 1u) {                               /* jump */
@@ -683,7 +682,7 @@ static void nv2a_pb_run_(uint32_t put_phys, uint32_t init_get_phys)
                 if (avail > count) avail = count;
                 if (avail > lim) avail = lim;
                 if (avail) {
-                    pb_emit_inline((const uint32_t *)(mem + s_get), avail);
+                    pb_emit_inline((const uint32_t *)xbox_GuestAddress(s_get), avail);
                     s_get += avail * 4; words += avail;
                 }
                 if (avail == count) continue;
@@ -699,7 +698,7 @@ static void nv2a_pb_run_(uint32_t put_phys, uint32_t init_get_phys)
                 if (avail > count) avail = count;
                 if (avail > lim) avail = lim;
                 if (avail) {
-                    pb_emit_block(PB_CONST_HDR, (const uint32_t *)(mem + s_get), avail);
+                    pb_emit_block(PB_CONST_HDR, (const uint32_t *)xbox_GuestAddress(s_get), avail);
                     s_get += avail * 4; words += avail;
                 }
                 if (avail == count) continue;
@@ -715,7 +714,7 @@ static void nv2a_pb_run_(uint32_t put_phys, uint32_t init_get_phys)
                 if (avail > count) avail = count;
                 if (avail > lim) avail = lim;
                 if (avail > 1) {
-                    pb_emit_block(PB_METH_HDR | ((uint32_t)noninc << 19) | (subch << 16) | method, (const uint32_t *)(mem + s_get), avail);
+                    pb_emit_block(PB_METH_HDR | ((uint32_t)noninc << 19) | (subch << 16) | method, (const uint32_t *)xbox_GuestAddress(s_get), avail);
                     s_get += avail * 4; words += avail;
                     if (avail == count) continue;
                     if (!noninc) method += avail * 4;
@@ -728,7 +727,7 @@ static void nv2a_pb_run_(uint32_t put_phys, uint32_t init_get_phys)
                     break;
                 if (inventory) note(subch, m);
                 if (s_exec_enabled)
-                    pb_emit(subch, m, *(const uint32_t *)(mem + s_get));
+                    pb_emit(subch, m, *(const uint32_t *)xbox_GuestAddress(s_get));
                 s_get += 4;
                 words++;
             }
@@ -747,7 +746,7 @@ static void nv2a_pb_run_(uint32_t put_phys, uint32_t init_get_phys)
             uint32_t q;
             for (q = 0; q < 40; q++)
                 fprintf(stderr, "  [PB]   seg+%03X: %08X\n", q * 4,
-                        *(const uint32_t *)(mem + a + q * 4));
+                        *(const uint32_t *)xbox_GuestAddress(a + q * 4));
         }
         s_get = put;
         s_in_call = 0;

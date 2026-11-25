@@ -805,7 +805,7 @@ static uint32_t texc_epoch(const Texture *t)
 
 static uint32_t texc_sum(const Texture *t)
 {
-    const uint8_t *m = (const uint8_t *)xbox_GetMemoryOffset() + t->offset;
+    const uint8_t *m = (const uint8_t *)xbox_GuestAddress(t->offset);
     uint32_t i, h = 2166136261u;
     /* The texture's whole extent in bytes (the old sum only looked at the
      * first width*height BYTES -- a quarter of a 32-bit texture -- and froze
@@ -1016,7 +1016,7 @@ static void texc_dxt_block(const uint8_t *b, uint32_t fmt, uint32_t bb, uint32_t
 }
 static int texc_decode_fast(const Texture *t, uint32_t *out)
 {
-    const uint8_t *mem = (const uint8_t *)xbox_GetMemoryOffset() + t->offset;
+    const uint8_t *mem = (const uint8_t *)xbox_GuestAddress(t->offset);
     uint32_t w = t->width, h = t->height, fmt = t->color, x, y;
     uint32_t bb = d3d8_format_dxt_block_bytes(fmt);
     if (!w || !h) return 0;
@@ -2276,7 +2276,7 @@ static void sw3d_batch(void)
     if (s_stage[0].enabled) note_texture_use();
 
     if (gpu_on()) { PT_ADD(PT_SETUP, pt_setup0); PT_T0(pt_b0); gpu_batch(); PT_ADD(PT_BATCH, pt_b0); return; }
-    s_surface_ok = surface_begin_batch((uint8_t *)xbox_GetMemoryOffset());
+    s_surface_ok = surface_begin_batch();
     if (!s_surface_ok) return;
     if ((s_3d.depth_test || s_3d.stencil_test)
         && (!s_zbuf || s_gpu.clip_x + s_gpu.clip_w > s_zbuf_w || s_gpu.clip_y + s_gpu.clip_h > s_zbuf_h))
@@ -2371,12 +2371,11 @@ static void sw3d_zeta_sync_base(uint32_t base)
 }
 static void sw3d_zeta_write(void)
 {
-    uint8_t *mem = (uint8_t *)xbox_GetMemoryOffset();
     uint32_t zbase = dma_resolve(s_zbuf_zeta), zpitch, x, y;
     zpitch = s_zbuf_zpitch ? s_zbuf_zpitch : s_zbuf_w * 4;
     if (surface_write_refused(zbase, zpitch * s_zbuf_h, "zeta sync")) return;
     for (y = 0; y < s_zbuf_h; y++) {
-        uint32_t *row = (uint32_t *)(mem + zbase + (size_t)y * zpitch);
+        uint32_t *row = (uint32_t *)((uint8_t *)xbox_GuestAddress(zbase) + (size_t)y * zpitch);
         for (x = 0; x < s_zbuf_w && x * 4 < zpitch; x++) {
             float z = s_zbuf[(size_t)y * s_zbuf_w + x];
             uint32_t zi = z <= 0.0f ? 0u : (z >= 16777215.0f ? 0xFFFFFFu : (uint32_t)z);

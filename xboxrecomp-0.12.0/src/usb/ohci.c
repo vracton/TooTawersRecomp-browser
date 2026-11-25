@@ -514,18 +514,18 @@ static uint32_t rd32(uint32_t va)
 {
     if (!range_ok(va, 4))
         return 0;
-    return *(uint32_t *)((uint8_t *)xbox_GetMemoryOffset() + ohci_phys_to_va(va));
+    return *(uint32_t *)xbox_GuestAddress(ohci_phys_to_va(va));
 }
 static void wr32(uint32_t va, uint32_t v)
 {
     if (!range_ok(va, 4))
         return;
-    *(uint32_t *)((uint8_t *)xbox_GetMemoryOffset() + ohci_phys_to_va(va)) = v;
+    *(uint32_t *)xbox_GuestAddress(ohci_phys_to_va(va)) = v;
 }
 static uint8_t *guest_ptr(uint32_t va, uint32_t bytes)
 {
     return range_ok(va, bytes)
-         ? (uint8_t *)xbox_GetMemoryOffset() + ohci_phys_to_va(va) : NULL;
+         ? (uint8_t *)xbox_GuestAddress(ohci_phys_to_va(va)) : NULL;
 }
 
 /* Move one transfer descriptor. Returns the condition code to report. */
@@ -863,7 +863,7 @@ static int ohci_run_periodic_list(OhciController *hc, uint32_t *done_head)
     if (getenv("RECOMP_USB_DUMP")) {
         static DWORD last;
         if (GetTickCount() - last > 10000) {
-            const uint8_t *m = (const uint8_t *)xbox_GetMemoryOffset() + 0x80000000u;
+            const uint8_t *m = (const uint8_t *)xbox_GuestAddress(XBOX_CONTIG_BASE);
             uint32_t a;
             last = GetTickCount();
             fprintf(stderr, "  [USBDUMP] %u reports so far; status %08X enable %08X control %08X; HCCA slots:", g_usb_reports, hc->reg[HcInterruptStatus / 4], hc->reg[HcInterruptEnable / 4], hc->reg[HcControl / 4]);

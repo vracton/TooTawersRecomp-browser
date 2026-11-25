@@ -409,7 +409,18 @@ void recomp_trace_esp(const char *name, const char *tag);
  * uintptr_t cast preserves the overflow bits, landing us 4GB+ past
  * our mapping and causing access violations.
  */
+#ifdef __EMSCRIPTEN__
+extern uintptr_t xbox_WebGuestAddress(uint32_t va);
+static inline uintptr_t recomp_guest_pointer(uint32_t va)
+{
+    if (va < 0x04000000u)
+        return (uintptr_t)g_xbox_mem_offset + va;
+    return xbox_WebGuestAddress(va);
+}
+#define XBOX_PTR(addr) recomp_guest_pointer((uint32_t)(addr))
+#else
 #define XBOX_PTR(addr) ((uintptr_t)(uint32_t)(addr) + g_xbox_mem_offset)
+#endif
 
 /** Read/write N bytes at a flat Xbox memory address. */
 #define MEM8(addr)   (*(volatile uint8_t  *)XBOX_PTR(addr))

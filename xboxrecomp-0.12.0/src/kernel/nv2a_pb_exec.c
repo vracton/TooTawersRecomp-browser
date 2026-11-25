@@ -429,8 +429,6 @@ static void note_unhandled(uint32_t method, uint32_t param)
  * caller sees a degenerate vertex rather than reading past the array. */
 static int fetch_attr(const VertexAttr *a, uint32_t index, float out[4])
 {
-    static const uint8_t *s_mem_base;
-    const uint8_t *mem = s_mem_base ? s_mem_base : (s_mem_base = (const uint8_t *)xbox_GetMemoryOffset());
     const uint8_t *p;
     uint32_t i;
 
@@ -450,7 +448,7 @@ static int fetch_attr(const VertexAttr *a, uint32_t index, float out[4])
     } else {
         if (!a->offset)
             return 0;
-        p = mem + a->offset + (size_t)index * a->stride;
+        p = (const uint8_t *)xbox_GuestAddress(a->offset) + (size_t)index * a->stride;
     }
 
     switch (a->type) {
@@ -514,7 +512,6 @@ static uint32_t surface_bpp(void)
 static void dump_surface_bmp(void)
 {
     const char *prefix = getenv("RECOMP_FB_DUMP");
-    const uint8_t *mem = (const uint8_t *)xbox_GetMemoryOffset();
     uint32_t bpp = surface_bpp();
     static int seq;
     char path[512];
@@ -548,9 +545,8 @@ static void dump_surface_bmp(void)
 
     /* BMP rows run bottom-up. */
     for (y = h; y-- > 0; ) {
-        const uint8_t *row = mem + dma_resolve(s_gpu.drawn_offset
-                                                ? s_gpu.drawn_offset
-                                                : s_gpu.color_offset)
+        const uint8_t *row = (const uint8_t *)xbox_GuestAddress(
+            dma_resolve(s_gpu.drawn_offset ? s_gpu.drawn_offset : s_gpu.color_offset))
                            + (size_t)(s_gpu.clip_y + y) * s_gpu.pitch;
         for (x = 0; x < w; x++) {
             uint8_t bgr[3];
@@ -592,7 +588,6 @@ static void clear_surface(uint32_t param)
         if (n++ % 1 == 0 && n > 1500 && n < 1600)
             fprintf(stderr, "  [PIX] ---- clear %08X color %08X\n", param, s_gpu.clear_color);
     }
-    uint8_t *mem = (uint8_t *)xbox_GetMemoryOffset();
     uint32_t bpp = surface_bpp();
     uint32_t y, x;
 
@@ -611,7 +606,7 @@ static void clear_surface(uint32_t param)
     }
 
     for (y = 0; y < s_gpu.clip_h; y++) {
-        uint8_t *row = mem + s_gpu.color_base
+        uint8_t *row = (uint8_t *)xbox_GuestAddress(s_gpu.color_base)
                      + (size_t)(s_gpu.clip_y + y) * s_gpu.pitch;
         if (bpp == 4) {
             /* Only the channels the title asked for: bits 4..7 are R, G, B,
@@ -805,7 +800,6 @@ static const Texture *s_cur_tex = &s_gpu.tex;
 
 static int sample_texture(uint32_t u, uint32_t v, uint32_t *argb)
 {
-    const uint8_t *mem = (const uint8_t *)xbox_GetMemoryOffset();
     const uint8_t *p;
     uint32_t fmt;
 
@@ -816,7 +810,7 @@ static int sample_texture(uint32_t u, uint32_t v, uint32_t *argb)
 
     fmt = s_cur_tex->color;
     if (d3d8_format_dxt_block_bytes(fmt))
-        return d3d8_dxt_decode_texel(mem + s_cur_tex->offset, fmt, u, v,
+        return d3d8_dxt_decode_texel((const uint8_t *)xbox_GuestAddress(s_cur_tex->offset), fmt, u, v,
                                      s_cur_tex->width, argb);
     if (d3d8_format_is_swizzled(fmt)) {
         /* Morton order: a texel's index is interleaved from x and y instead of
@@ -824,10 +818,10 @@ static int sample_texture(uint32_t u, uint32_t v, uint32_t *argb)
          * casts to each format's own width, which makes that index a texel
          * index for every one of them. */
         fmt = linear_twin(fmt);
-        p = mem + s_cur_tex->offset;
+        p = (const uint8_t *)xbox_GuestAddress(s_cur_tex->offset);
         u = swizzle_offset(u, v, s_cur_tex->width, s_cur_tex->height);
     } else {
-        p = mem + s_cur_tex->offset + (size_t)v * s_cur_tex->pitch;
+        p = (const uint8_t *)xbox_GuestAddress(s_cur_tex->offset) + (size_t)v * s_cur_tex->pitch;
     }
 
     switch (fmt) {
@@ -1063,14 +1057,14 @@ static uint32_t gpu_written_gen(uint32_t base, uint32_t bytes)
     return g;
 }
 
-static int surface_begin_batch(const uint8_t *mem)
+static int surface_begin_batch(void)
 {
     uint32_t base = dma_resolve(s_gpu.color_offset);
     static uint32_t last_base, last_gen = ~0u;
 
     if (surface_hits_image(base, (s_gpu.clip_y + s_gpu.clip_h) * s_gpu.pitch))
         return 0;
-    s_surface = (uint8_t *)mem + base;
+    s_surface = (uint8_t *)xbox_GuestAddress(base);
     if (base != last_base || last_gen != s_wgen) {
         gpu_note_write(base, (s_gpu.clip_y + s_gpu.clip_h) * s_gpu.pitch);
         last_base = base; last_gen = s_wgen;
@@ -1078,11 +1072,10 @@ static int surface_begin_batch(const uint8_t *mem)
     return 1;
 }
 
-static void put_pixel(uint8_t *mem, uint32_t bpp, int x, int y, uint32_t argb)
+static void put_pixel(uint32_t bpp, int x, int y, uint32_t argb)
 {
     uint8_t *row;
 
-    (void)mem;
     if (x < (int)s_gpu.clip_x || x >= (int)(s_gpu.clip_x + s_gpu.clip_w))
         return;
     if (y < (int)s_gpu.clip_y || y >= (int)(s_gpu.clip_y + s_gpu.clip_h))
@@ -1144,7 +1137,6 @@ static void raster_triangle(const float a[2], const float b[2],
                             const float c[2], uint32_t argb,
                             const float uv[3][2])
 {
-    uint8_t *mem = (uint8_t *)xbox_GetMemoryOffset();
     uint32_t bpp = surface_bpp();
     float area;
     int minx, maxx, miny, maxy, x, y;
@@ -1160,7 +1152,7 @@ static void raster_triangle(const float a[2], const float b[2],
     /* Where this batch writes. The same check the per-pixel path made, made
      * once: a surface address landing on the title's own image is no safer
      * one pixel at a time than 4.9 MB at once. */
-    if (!surface_begin_batch(mem))
+    if (!surface_begin_batch())
         return;
 
     minx = (int)floorf(fminf(a[0], fminf(b[0], c[0])));
@@ -1200,11 +1192,11 @@ static void raster_triangle(const float a[2], const float b[2],
                 if (su < 0.0f) su = 0.0f;
                 if (sv < 0.0f) sv = 0.0f;
                 if (sample_texture((uint32_t)su, (uint32_t)sv, &texel)) {
-                    put_pixel(mem, bpp, x, y, texel);
+                    put_pixel(bpp, x, y, texel);
                     continue;
                 }
             }
-            put_pixel(mem, bpp, x, y, argb);
+            put_pixel(bpp, x, y, argb);
         }
     }
     s_gpu.tris_drawn++;
@@ -1597,7 +1589,6 @@ static void draw_primitive(void)
                 /* Every attribute the batch has, not just position. If the
                  * other streams carry data and position does not, the problem
                  * is one buffer rather than the whole vertex path. */
-                const uint8_t *mem = (const uint8_t *)xbox_GetMemoryOffset();
                 uint32_t a, k;
                 for (a = 0; a < NV_VERTEX_ATTRS; a++) {
                     const VertexAttr *at = &s_gpu.attr[a];
@@ -1605,7 +1596,7 @@ static void draw_primitive(void)
                     if (!at->offset || !at->size)
                         continue;
                     for (k = 0; k < 64; k++)
-                        if (mem[at->offset + k]) nz++;
+                        if (((const uint8_t *)xbox_GuestAddress(at->offset))[k]) nz++;
                     fprintf(stderr, "  [GPU]   attr%-2u off 0x%08X type %u"
                                     " size %u stride %-3u  %u/64 bytes set\n",
                             a, at->offset, at->type, at->size, at->stride, nz);
@@ -1615,11 +1606,10 @@ static void draw_primitive(void)
                 /* Raw bytes at the array, in case the values read as zero:
                  * that looks the same whether the offset is wrong or the
                  * buffer genuinely has not been filled yet. */
-                const uint8_t *mem = (const uint8_t *)xbox_GetMemoryOffset();
                 uint32_t k;
                 fprintf(stderr, "  [GPU]   bytes @0x%08X:", s_gpu.attr[0].offset);
                 for (k = 0; k < 32; k++)
-                    fprintf(stderr, " %02X", mem[s_gpu.attr[0].offset + k]);
+                    fprintf(stderr, " %02X", ((const uint8_t *)xbox_GuestAddress(s_gpu.attr[0].offset))[k]);
                 fprintf(stderr, "\n");
                 fprintf(stderr, "  [GPU]   indices:");
                 for (k = 0; k < s_gpu.idx_count && k < 8; k++)
@@ -1902,9 +1892,8 @@ static uint32_t s_semaphore_dma;      /* NV097_SET_CONTEXT_DMA_SEMAPHORE (0x01A4
  * base = (frame & ~0xFFF) | ((flags >> 20) & 0xFFF). */
 static uint32_t dma_object_base(uint32_t handle)
 {
-    const uint8_t *mem = (const uint8_t *)xbox_GetMemoryOffset();
     const uint32_t ramin = 0xFD700000u;
-    uint32_t reg = *(const volatile uint32_t *)(mem + 0xFD002210u);
+    uint32_t reg = *(const volatile uint32_t *)xbox_GuestAddress(0xFD002210u);
     uint32_t base = ((reg >> 4) & 0x1Fu) << 12;
     uint32_t size = 0x1000u << ((reg >> 16) & 3u);
     uint32_t i;
@@ -1914,12 +1903,12 @@ static uint32_t dma_object_base(uint32_t handle)
         size = 0x10000u;
     }
     for (i = 0; i + 8 <= size; i += 8) {
-        uint32_t h = *(const volatile uint32_t *)(mem + ramin + base + i);
-        uint32_t ctx = *(const volatile uint32_t *)(mem + ramin + base + i + 4);
+        uint32_t h = *(const volatile uint32_t *)xbox_GuestAddress(ramin + base + i);
+        uint32_t ctx = *(const volatile uint32_t *)xbox_GuestAddress(ramin + base + i + 4);
         if (h == handle && ctx) {
             uint32_t inst = (ctx & 0xFFFFu) << 4;
-            uint32_t flags = *(const volatile uint32_t *)(mem + ramin + inst);
-            uint32_t frame = *(const volatile uint32_t *)(mem + ramin + inst + 8);
+            uint32_t flags = *(const volatile uint32_t *)xbox_GuestAddress(ramin + inst);
+            uint32_t frame = *(const volatile uint32_t *)xbox_GuestAddress(ramin + inst + 8);
             return (frame & 0xFFFFF000u) | ((flags >> 20) & 0xFFFu);
         }
     }
@@ -2114,7 +2103,6 @@ static int blit_method(uint32_t subch, uint32_t method, uint32_t param)
     case 0x0300: s_blit.in = param; return 1;
     case 0x0304: s_blit.out = param; return 1;
     case 0x0308: {
-        uint8_t *mem = (uint8_t *)xbox_GetMemoryOffset();
         uint32_t w = param & 0xFFFF, h = param >> 16;
         uint32_t ix = s_blit.in & 0xFFFF, iy = s_blit.in >> 16;
         uint32_t ox = s_blit.out & 0xFFFF, oy = s_blit.out >> 16;
@@ -2132,8 +2120,8 @@ static int blit_method(uint32_t subch, uint32_t method, uint32_t param)
         sw3d_zeta_sync_base(sb);
         if (surface_write_refused(db + oy * dp, h * dp, "blit")) return 1;
         for (r = 0; r < h; r++)
-            memmove(mem + db + (size_t)(oy + r) * dp + ox * bpp,
-                    mem + sb + (size_t)(iy + r) * sp + ix * bpp, (size_t)w * bpp);
+            memmove((uint8_t *)xbox_GuestAddress(db) + (size_t)(oy + r) * dp + ox * bpp,
+                    (const uint8_t *)xbox_GuestAddress(sb) + (size_t)(iy + r) * sp + ix * bpp, (size_t)w * bpp);
         gpu_note_write(db + oy * dp, h * dp);
         return 1;
     }
@@ -2563,9 +2551,8 @@ void nv2a_pb_exec_method(uint32_t subch, uint32_t method, uint32_t param)
         break;
     case 0x1D70: { /* NV097_BACK_END_WRITE_SEMAPHORE_RELEASE */
         uint32_t va = dma_resolve(dma_object_base(s_semaphore_dma) + s_semaphore_offset);
-        uint8_t *mem = (uint8_t *)xbox_GetMemoryOffset();
         if (va && !surface_hits_image(va, 4))
-            *(volatile uint32_t *)(mem + va) = param;
+            *(volatile uint32_t *)xbox_GuestAddress(va) = param;
         if (getenv("RECOMP_PB_EXEC_VERBOSE") || getenv("RECOMP_SEM_TRACE"))
             fprintf(stderr, "  [GPU] semaphore release 0x%08X -> 0x%08X (dma 0x%X base 0x%08X + 0x%08X)\n",
                     param, va, s_semaphore_dma, dma_object_base(s_semaphore_dma), s_semaphore_offset);
@@ -2872,7 +2859,6 @@ static void find_nan_matrices(void)
 static void peek_addresses(void)
 {
     const char *spec = getenv("RECOMP_PEEK");
-    const uint8_t *mem = (const uint8_t *)xbox_GetMemoryOffset();
     char buf[256];
     char *tok, *ctx = NULL;
 
@@ -2886,7 +2872,7 @@ static void peek_addresses(void)
         float f;
         if (va < 0x1000u || va >= 0x04000000u)
             continue;
-        v = *(const uint32_t *)(mem + va);
+        v = *(const uint32_t *)xbox_GuestAddress(va);
         memcpy(&f, &v, 4);
         fprintf(stderr, "  [PEEK] 0x%08X = %08X  (%g)\n", va, v, f);
     }
@@ -2903,7 +2889,6 @@ static void peek_addresses(void)
 static void peek_chain(void)
 {
     const char *spec = getenv("RECOMP_PEEK_CHAIN");
-    const uint8_t *mem = (const uint8_t *)xbox_GetMemoryOffset();
     char buf[256], *tok, *ctx = NULL;
     uint32_t cur = 0;
     int step = 0;
@@ -2924,7 +2909,7 @@ static void peek_chain(void)
                                 " pointer -- chain ends\n", step, cur);
                 return;
             }
-            cur = *(const uint32_t *)(mem + cur) + off;
+            cur = *(const uint32_t *)xbox_GuestAddress(cur) + off;
             fprintf(stderr, "  [CHAIN] step %d: deref +0x%X -> 0x%08X\n",
                     step, off, cur);
         }
@@ -2932,7 +2917,7 @@ static void peek_chain(void)
     }
     if (cur >= 0x1000u && cur + 4 < 0x04000000u)
         fprintf(stderr, "  [CHAIN] final value at 0x%08X = 0x%08X\n",
-                cur, *(const uint32_t *)(mem + cur));
+                cur, *(const uint32_t *)xbox_GuestAddress(cur));
     fflush(stderr);
 }
 
@@ -3092,7 +3077,6 @@ static void cap_state(FILE *f, int save)
 static void cap_on_flip(void)
 {
     static int target = -1, n, every, taken;
-    uint8_t *mem = (uint8_t *)xbox_GetMemoryOffset();
     if (s_cap_fp) {                         /* end of the captured frame */
         uint32_t end[3] = { 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu };
         fwrite(end, sizeof end, 1, s_cap_fp);
@@ -3125,7 +3109,7 @@ static void cap_on_flip(void)
         fwrite(&nr, 4, 1, s_cap_fp);
         for (i = 0; i < nr; i++) {
             fwrite(&r[i], 8, 1, s_cap_fp);
-            fwrite(mem + r[i].va, 1, r[i].size, s_cap_fp);
+            fwrite((const void *)xbox_GuestAddress(r[i].va), 1, r[i].size, s_cap_fp);
         }
         fprintf(stderr, "  [CAPTURE] started at flip %d\n", n);
         fflush(stderr);
@@ -3135,7 +3119,6 @@ static void cap_on_flip(void)
 int nv2a_replay(const char *path)
 {
     FILE *f = fopen(path, "rb");
-    uint8_t *mem = (uint8_t *)xbox_GetMemoryOffset();
     uint32_t magic = 0, rec[3];
     int i, nr = 0;
     unsigned long long count = 0;
@@ -3148,7 +3131,7 @@ int nv2a_replay(const char *path)
     for (i = 0; i < nr; i++) {
         struct { uint32_t va, size; } r;
         if (fread(&r, 8, 1, f) != 1) return 1;
-        if (fread(mem + r.va, 1, r.size, f) != r.size) { fprintf(stderr, "replay: short region\n"); return 1; }
+        if (fread((void *)xbox_GuestAddress(r.va), 1, r.size, f) != r.size) { fprintf(stderr, "replay: short region\n"); return 1; }
     }
     b0 = s_3d.batches;
     if (getenv("RECOMP_REPLAY_ZETA")) s_zeta_offset = (uint32_t)strtoul(getenv("RECOMP_REPLAY_ZETA"), NULL, 0);

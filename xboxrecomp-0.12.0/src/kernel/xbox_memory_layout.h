@@ -214,6 +214,13 @@ void *xbox_GetMemoryBase(void);
  * Returns 0 if memory is mapped at original Xbox addresses (ideal case).
  */
 ptrdiff_t xbox_GetMemoryOffset(void);
+
+#ifdef __EMSCRIPTEN__
+uintptr_t xbox_WebGuestAddress(uint32_t va);
+#define xbox_GuestAddress(va) xbox_WebGuestAddress((uint32_t)(va))
+#else
+#define xbox_GuestAddress(va) ((uintptr_t)(uint32_t)(va) + xbox_GetMemoryOffset())
+#endif
 /* Bytes of guest address space mapped, for bounds-checking a guest pointer
  * that came out of guest memory rather than from this side. */
 size_t xbox_GetMappedSize(void);

@@ -529,7 +529,7 @@ static void poke_tick(void)
             continue;
         {
             volatile uint32_t *w = (volatile uint32_t *)
-                ((uintptr_t)g_poke[i].va + g_memory_offset);
+                xbox_GuestAddress(g_poke[i].va);
             if (*w != g_poke[i].value)
                 *w = g_poke[i].value;
         }
@@ -548,7 +548,7 @@ static void dsp_ack_tick(void)
             continue;
         {
             volatile uint32_t *w = (volatile uint32_t *)
-                ((uintptr_t)g_dsp_ack[i] + g_memory_offset);
+                xbox_GuestAddress(g_dsp_ack[i]);
             if (*w)
                 *w = 0;
         }
@@ -674,18 +674,15 @@ static void counter_mirrors_tick(void)
 
         if (!fence_readable(g_counter_mirrors[i].device_ptr_va, 4))
             continue;
-        dev = *(volatile uint32_t *)((uintptr_t)g_counter_mirrors[i].device_ptr_va
-                                     + g_memory_offset);
+        dev = *(volatile uint32_t *)xbox_GuestAddress(g_counter_mirrors[i].device_ptr_va);
         if (!fence_readable(dev + g_counter_mirrors[i].src_off, 4)
                 || !fence_readable(dev + g_counter_mirrors[i].dst_off, 4))
             continue;
         {
             volatile uint32_t *dst =
-                (volatile uint32_t *)((uintptr_t)(dev + g_counter_mirrors[i].dst_off)
-                                      + g_memory_offset);
+                (volatile uint32_t *)xbox_GuestAddress((dev + g_counter_mirrors[i].dst_off));
             uint32_t src =
-                *(volatile uint32_t *)((uintptr_t)(dev + g_counter_mirrors[i].src_off)
-                                       + g_memory_offset);
+                *(volatile uint32_t *)xbox_GuestAddress((dev + g_counter_mirrors[i].src_off));
             if (*dst != src)
                 *dst = src;
         }
@@ -753,12 +750,10 @@ void xbox_Nv2aFrameCounterFlip(void)
 
         if (!fence_readable(g_frame_counters[i].device_ptr_va, 4))
             continue;
-        dev = *(volatile uint32_t *)((uintptr_t)g_frame_counters[i].device_ptr_va
-                                     + g_memory_offset);
+        dev = *(volatile uint32_t *)xbox_GuestAddress(g_frame_counters[i].device_ptr_va);
         if (!fence_readable(dev + g_frame_counters[i].counter_off, 4))
             continue;
-        *(volatile uint32_t *)((uintptr_t)(dev + g_frame_counters[i].counter_off)
-                               + g_memory_offset) += 1;
+        *(volatile uint32_t *)xbox_GuestAddress((dev + g_frame_counters[i].counter_off)) += 1;
     }
 }
 
@@ -786,12 +781,10 @@ static void frame_counters_tick(void)
 
         if (!fence_readable(g_frame_counters[i].device_ptr_va, 4))
             continue;
-        dev = *(volatile uint32_t *)((uintptr_t)g_frame_counters[i].device_ptr_va
-                                     + g_memory_offset);
+        dev = *(volatile uint32_t *)xbox_GuestAddress(g_frame_counters[i].device_ptr_va);
         if (!fence_readable(dev + g_frame_counters[i].counter_off, 4))
             continue;
-        *(volatile uint32_t *)((uintptr_t)(dev + g_frame_counters[i].counter_off)
-                               + g_memory_offset) += 1;
+        *(volatile uint32_t *)xbox_GuestAddress((dev + g_frame_counters[i].counter_off)) += 1;
     }
 }
 
@@ -802,21 +795,18 @@ static void fence_mirrors_tick(void)
 
         if (!fence_readable(g_fence_mirrors[i].device_ptr_va, 4))
             continue;
-        dev = *(volatile uint32_t *)((uintptr_t)g_fence_mirrors[i].device_ptr_va
-                                     + g_memory_offset);
+        dev = *(volatile uint32_t *)xbox_GuestAddress(g_fence_mirrors[i].device_ptr_va);
         if (!fence_readable(dev + g_fence_mirrors[i].get_ptr_off, 4)
                 || !fence_readable(dev + g_fence_mirrors[i].put_off, 4))
             continue;
-        get_ptr = *(volatile uint32_t *)((uintptr_t)(dev + g_fence_mirrors[i].get_ptr_off)
-                                         + g_memory_offset);
+        get_ptr = *(volatile uint32_t *)xbox_GuestAddress((dev + g_fence_mirrors[i].get_ptr_off));
         if (!fence_readable(get_ptr, 4))
             continue;
         {
             volatile uint32_t *fence =
-                (volatile uint32_t *)((uintptr_t)get_ptr + g_memory_offset);
+                (volatile uint32_t *)xbox_GuestAddress(get_ptr);
             uint32_t put =
-                *(volatile uint32_t *)((uintptr_t)(dev + g_fence_mirrors[i].put_off)
-                                       + g_memory_offset);
+                *(volatile uint32_t *)xbox_GuestAddress((dev + g_fence_mirrors[i].put_off));
             if (*fence != put)
                 *fence = put;
         }
@@ -870,7 +860,7 @@ static void framebuffer_probe_tick(void)
     last_ms = now;
     if ((size_t)s_fb_va + s_fb_pitch * s_fb_height > g_memory_size)
         return;
-    p = (const uint32_t *)((uintptr_t)s_fb_va + g_memory_offset);
+    p = (const uint32_t *)xbox_GuestAddress(s_fb_va);
     n = (s_fb_pitch * s_fb_height) / 4;
     for (i = 0; i < n; i++) {
         sum = sum * 33u + p[i];
@@ -1125,8 +1115,7 @@ static DWORD WINAPI nv2a_ack_thread(LPVOID param)
          * up XNet. A live clock is also just the truth -- KeTickCount ticks on
          * hardware whether or not anyone is asleep. GetTickCount() shares the
          * millisecond unit, so the rate matches. */
-        *(volatile uint32_t *)((uintptr_t)(XBOX_KERNEL_DATA_BASE + KDATA_TICK_COUNT)
-                               + g_memory_offset) = GetTickCount();
+        *(volatile uint32_t *)xbox_GuestAddress((XBOX_KERNEL_DATA_BASE + KDATA_TICK_COUNT)) = GetTickCount();
 
         {   /* (testing, RECOMP_ACK_SLEEPUS=n: a short sleep instead of the yield) */
             static int us = -1; if (us < 0) { const char *e = getenv("RECOMP_ACK_SLEEPUS"); us = e ? atoi(e) : 0; }
@@ -1787,6 +1776,68 @@ volatile uint32_t g_icall_trace[16] = {0};
 volatile uint32_t g_icall_trace_idx = 0;
 volatile uint64_t g_icall_count = 0;
 
+#ifdef __EMSCRIPTEN__
+static int allocate_web_region(void **region, size_t size)
+{
+    *region = aligned_alloc(4096, size);
+    if (!*region)
+        return 0;
+    memset(*region, 0, size);
+    return 1;
+}
+
+uintptr_t xbox_WebGuestAddress(uint32_t va)
+{
+    if (va < XBOX_CONTIG_BASE)
+        return (uintptr_t)g_memory_base + va % g_memory_size;
+    if (va - XBOX_CONTIG_BASE < XBOX_CONTIG_SIZE)
+        return (uintptr_t)g_contig_memory + (va - XBOX_CONTIG_BASE);
+    if (va - XBOX_CONTIG_HIGH_BASE < XBOX_CONTIG_HIGH_SIZE)
+        return (uintptr_t)g_contig_high + (va - XBOX_CONTIG_HIGH_BASE);
+    if (va - XBOX_TILED_BASE < XBOX_CONTIG_SIZE)
+        return (uintptr_t)g_contig_memory + (va - XBOX_TILED_BASE);
+    if (va - XBOX_NV2A_BASE < XBOX_NV2A_SIZE)
+        return (uintptr_t)g_nv2a_memory + (va - XBOX_NV2A_BASE);
+    if (va - XBOX_MCPX_BASE < XBOX_MCPX_SIZE)
+        return (uintptr_t)g_mcpx_memory + (va - XBOX_MCPX_BASE);
+    if (va - XBOX_FLASH_BASE < XBOX_FLASH_SIZE)
+        return (uintptr_t)g_flash_memory + (va - XBOX_FLASH_BASE);
+    fprintf(stderr, "Unmapped guest address 0x%08x\n", va);
+    abort();
+}
+
+static void free_web_memory(void)
+{
+    free(g_memory_base);
+    free(g_contig_memory);
+    free(g_contig_high);
+    free(g_nv2a_memory);
+    free(g_mcpx_memory);
+    free(g_flash_memory);
+    g_memory_base = g_contig_memory = g_contig_high = NULL;
+    g_nv2a_memory = g_mcpx_memory = g_flash_memory = NULL;
+    g_kernel_memory = g_mcpx_regs = g_tiled_view = NULL;
+    g_memory_offset = 0;
+    g_memory_size = 0;
+}
+
+static int allocate_web_memory(void)
+{
+    if (!allocate_web_region(&g_memory_base, g_memory_size) ||
+        !allocate_web_region(&g_contig_memory, XBOX_CONTIG_SIZE) ||
+        !allocate_web_region(&g_contig_high, XBOX_CONTIG_HIGH_SIZE) ||
+        !allocate_web_region(&g_nv2a_memory, XBOX_NV2A_SIZE) ||
+        !allocate_web_region(&g_mcpx_memory, XBOX_MCPX_SIZE) ||
+        !allocate_web_region(&g_flash_memory, XBOX_FLASH_SIZE)) {
+        free_web_memory();
+        return 0;
+    }
+    g_mcpx_regs = g_mcpx_memory;
+    g_tiled_view = g_contig_memory;
+    return 1;
+}
+#endif
+
 BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
 {
     g_force_return = getenv("RECOMP_FORCE_RETURN") != NULL;
@@ -1810,6 +1861,11 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
      * at multiples of this, so growing it is what stops a title's
      * above-RAM allocations from aliasing low memory. */
     g_memory_size = g_xbox_map_size ? g_xbox_map_size : g_xbox_total_ram;
+
+#ifdef __EMSCRIPTEN__
+    if (!allocate_web_memory())
+        return FALSE;
+#else
 
     /*
      * Create a file mapping backed by the page file.
@@ -1916,6 +1972,8 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
         return FALSE;
     }
 
+#endif
+
     g_memory_offset = (uintptr_t)g_memory_base - XBOX_MAP_START;
 
     /* Guest page zero: no access.
@@ -1990,7 +2048,7 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
      * Helper macro: convert Xbox VA to actual mapped address.
      * When g_memory_offset == 0 (ideal case), this is identity.
      */
-    #define XBOX_VA(va) ((void *)((uintptr_t)(va) + g_memory_offset))
+    #define XBOX_VA(va) ((void *)xbox_GuestAddress((va)))
 
     /*
      * Copy XBE header to base address.
@@ -2162,7 +2220,7 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
              * slots, and kernel.h notes 366 is short by 12. A title importing
              * a high ordinal would have had its table truncated here. */
             for (uint32_t t = 0; t < XBOX_KERNEL_THUNK_TABLE_SIZE; t++) {
-                uint32_t entry = *(volatile uint32_t *)((uintptr_t)(thunk_va + t * 4) + g_memory_offset);
+                uint32_t entry = *(volatile uint32_t *)xbox_GuestAddress((thunk_va + t * 4));
                 if (entry == 0) break;
                 thunk_count++;
             }
@@ -2217,7 +2275,7 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
      * We use free space in the BSS area for the fake structures.
      */
     {
-        #define XBOX_VA(va) ((void *)((uintptr_t)(va) + g_memory_offset))
+        #define XBOX_VA(va) ((void *)xbox_GuestAddress((va)))
         #define MEM32_INIT(va, val) (*(uint32_t *)XBOX_VA(va) = (uint32_t)(val))
 
         /* Fake TIB at address 0x0 */
@@ -2328,6 +2386,11 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
         #undef XBOX_VA
     }
 
+#ifdef __EMSCRIPTEN__
+    if (getenv("RECOMP_AC97_READY")) {
+        *(volatile uint32_t *)((char *)g_mcpx_memory + 0x00400130u) |= 0x100u;
+    }
+#else
     /*
      * Contiguous / physical memory window at 0x80000000.
      *
@@ -2546,6 +2609,8 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
         }
     }
 
+#endif
+
     if (g_nv2a_memory) {
         xbox_Nv2aAckStart();
     }
@@ -2563,7 +2628,7 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
     {
         #define XBOX_KERNEL_BASE 0x80010000u
         #define KERNEL_PAGE_SIZE 4096
-        uintptr_t kernel_native = XBOX_KERNEL_BASE + g_memory_offset;
+        uintptr_t kernel_native = xbox_GuestAddress(XBOX_KERNEL_BASE);
         /* Already committed if the contiguous window above succeeded -
          * 0x80010000 sits inside it - so just use that storage. */
         g_kernel_memory = g_contig_memory
@@ -2591,6 +2656,7 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
             (unsigned)((XBOX_HEAP_TOP - XBOX_HEAP_BASE) / (1024 * 1024)),
             XBOX_HEAP_BASE, XBOX_HEAP_TOP);
 
+#ifndef __EMSCRIPTEN__
     /*
      * Map mirror views of the 64 MB region.
      *
@@ -2711,11 +2777,9 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
              * startup line. */
             {
                 volatile uint32_t *via_tiled =
-                    (volatile uint32_t *)((uintptr_t)(XBOX_TILED_BASE + 0x1000)
-                                          + g_memory_offset);
+                    (volatile uint32_t *)xbox_GuestAddress((XBOX_TILED_BASE + 0x1000));
                 volatile uint32_t *via_contig =
-                    (volatile uint32_t *)((uintptr_t)(XBOX_CONTIG_BASE + 0x1000)
-                                          + g_memory_offset);
+                    (volatile uint32_t *)xbox_GuestAddress((XBOX_CONTIG_BASE + 0x1000));
                 uint32_t saved = *via_contig;
 
                 *via_tiled = 0xA5C30F17u;
@@ -2740,6 +2804,8 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
                     XBOX_TILED_BASE, GetLastError());
         }
     }
+
+#endif
 
     xbox_WatchInit();
     fprintf(stderr, "xbox_MemoryLayoutInit: complete\n");
@@ -2777,16 +2843,21 @@ void xbox_ProtectMirrorsForDebug(void)
 
 void xbox_MemoryLayoutShutdown(void)
 {
+#ifndef __EMSCRIPTEN__
     if (g_kernel_memory) {
         VirtualFree(g_kernel_memory, 0, MEM_RELEASE);
         g_kernel_memory = NULL;
     }
+#endif
     if (g_nv2a_ack_thread) {
         InterlockedExchange(&g_nv2a_ack_stop, 1);
         WaitForSingleObject(g_nv2a_ack_thread, 1000);
         CloseHandle(g_nv2a_ack_thread);
         g_nv2a_ack_thread = NULL;
     }
+#ifdef __EMSCRIPTEN__
+    free_web_memory();
+#else
     if (g_nv2a_memory) {
         VirtualFree(g_nv2a_memory, 0, MEM_RELEASE);
         g_nv2a_memory = NULL;
@@ -2843,6 +2914,7 @@ void xbox_MemoryLayoutShutdown(void)
         g_span_base = NULL;
         g_span_size = 0;
     }
+#endif
     fprintf(stderr, "xbox_MemoryLayoutShutdown: released\n");
 }
 
@@ -2958,7 +3030,7 @@ static int g_thread_stacks_used = 0;
 uint32_t xbox_AllocThreadTib(void)
 {
     /* XBOX_VA is scoped to the loader; the same arithmetic, spelled here. */
-    #define TIB_VA(va) ((void *)((uintptr_t)(va) + g_memory_offset))
+    #define TIB_VA(va) ((void *)xbox_GuestAddress((va)))
     const uint32_t tib_size = 0x40;
     uint32_t tib, block, thread_data, total;
 
@@ -3169,7 +3241,7 @@ uint32_t xbox_ContiguousAlloc(uint32_t size, uint32_t alignment)
             g_contig_next = (g_contig_next + kb * 1024u + 4095u) & ~4095u; fprintf(stderr, "  [CONTIG] test: %u KB taken (%u KB used)\n", kb, (g_contig_next - XBOX_CONTIG_BASE) >> 10); }
     }
     if (contig_reuse_on() && (result = contig_from_free(size, alignment, XBOX_CONTIG_REST_MS)) != 0) {
-        memset((void *)((uintptr_t)result + g_memory_offset), 0, size);
+        memset((void *)xbox_GuestAddress(result), 0, size);
         return result;
     }
 
@@ -3188,7 +3260,7 @@ uint32_t xbox_ContiguousAlloc(uint32_t size, uint32_t alignment)
         if (contig_reuse_on() && !getenv("RECOMP_CONTIG_STRICTREST")
             && ((result = contig_from_free(size, alignment, 250u)) != 0 || (result = contig_from_free(size, alignment, 0u)) != 0)) {
             static int n; if (n++ < 20) { fprintf(stderr, "  [CONTIG] window full: %u bytes from a block freed lately\n", size); fflush(stderr); }
-            memset((void *)((uintptr_t)result + g_memory_offset), 0, size);
+            memset((void *)xbox_GuestAddress(result), 0, size);
             return result;
         }
         fprintf(stderr, "  [CONTIG] arena exhausted (%u requested, %u of %u used, %u free in pieces)\n",
@@ -3201,7 +3273,7 @@ uint32_t xbox_ContiguousAlloc(uint32_t size, uint32_t alignment)
     contig_note(result, size);
     g_contig_next = result + size;
     if (getenv("RECOMP_CONTIG_LOG")) { fprintf(stderr, "  [CONTIGLOG] +%u at %08X (top %u KB, %d blocks) from rel %lld\n", size, result, (g_contig_next - XBOX_CONTIG_BASE) >> 10, g_cblk_n, (long long)((char *)__builtin_return_address(0) - (char *)&xbox_ContiguousAlloc)); }
-    memset((void *)((uintptr_t)result + g_memory_offset), 0, size);
+    memset((void *)xbox_GuestAddress(result), 0, size);
     return result;
 }
 
@@ -3260,7 +3332,7 @@ uint32_t xbox_HeapAlloc(uint32_t size, uint32_t alignment)
         }
         g_heap_blocks[i].free = 0;
         result = g_heap_blocks[i].addr;
-        memset((void *)((uintptr_t)result + g_memory_offset), 0, size);
+        memset((void *)xbox_GuestAddress(result), 0, size);
         return result;
     }
 
@@ -3305,7 +3377,7 @@ uint32_t xbox_HeapAlloc(uint32_t size, uint32_t alignment)
     g_heap_next = result + size;
 
     /* Zero-fill the allocated block (Xbox memory is always zeroed) */
-    memset((void *)((uintptr_t)result + g_memory_offset), 0, size);
+    memset((void *)xbox_GuestAddress(result), 0, size);
 
     if (g_heap_block_count < XBOX_HEAP_MAX_BLOCKS) {
         g_heap_blocks[g_heap_block_count].addr = result;

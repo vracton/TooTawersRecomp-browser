@@ -626,7 +626,7 @@ static void gpu_fbo_ms_forget(GLuint rb)
 
 static uint32_t gpu_mem_sum(uint32_t base, uint32_t bytes)
 {
-    const uint8_t *m = (const uint8_t *)xbox_GetMemoryOffset() + base;
+    const uint8_t *m = (const uint8_t *)xbox_GuestAddress(base);
     uint32_t h = 2166136261u, i, step = bytes / 1024;
     if (step < 4) step = 4;
     for (i = 0; i + 4 <= bytes && i < 1024 * step; i += step)
@@ -897,7 +897,7 @@ static GSurf *gsurf_get(uint32_t base, uint32_t w, uint32_t h, int depth)
     if (!depth) {
         /* Start from what the guest has there: a surface the CPU filled (or
          * the software path drew before the switch) keeps its picture. */
-        const uint8_t *m = (const uint8_t *)xbox_GetMemoryOffset() + base;
+        const uint8_t *m = (const uint8_t *)xbox_GuestAddress(base);
         uint32_t pitch = s_gpu.pitch && (s_gpu.pitch & 0xFFFF) >= w * 4 ? (s_gpu.pitch & 0xFFFF) : w * 4;
         if (dma_resolve(s_gpu.color_offset) != base) pitch = w * 4;
         gsurf_upload(s, m, pitch);
@@ -919,7 +919,7 @@ static void gsurf_sync_from_mem(GSurf *s)
     s->synced_run = g_pb_runs;
     sum = gpu_mem_sum(s->base, s->pitch * s->h);
     if (sum == s->mem_sum) return;
-    gsurf_upload(s, (const uint8_t *)xbox_GetMemoryOffset() + s->base, s->pitch);
+    gsurf_upload(s, (const uint8_t *)xbox_GuestAddress(s->base), s->pitch);
     s->mem_sum = sum;
 }
 
@@ -3222,7 +3222,7 @@ static int gpu_blit(uint32_t sb, uint32_t db, uint32_t ix, uint32_t iy, uint32_t
 static void gpu_readback(uint32_t base, uint32_t pitch)
 {
     GSurf *s = gsurf_find(base, 0);
-    uint8_t *m = (uint8_t *)xbox_GetMemoryOffset() + base;
+    uint8_t *m = (uint8_t *)xbox_GuestAddress(base);
     if (!s) return;
     gsurf_resolve(s);
     if (!pitch) pitch = s->w * 4;
