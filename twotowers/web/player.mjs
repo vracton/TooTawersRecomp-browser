@@ -129,10 +129,7 @@ play.addEventListener("click", async () => {
         const Audio = window.AudioContext ?? window.webkitAudioContext;
         const audio = Audio ? new Audio({ sampleRate: 48000 }) : null;
         globalThis.twoTowersAudio = audio;
-        if (audio) {
-            await audio.resume();
-            globalThis.twoTowersAudioOutput = await startAudio(audio);
-        }
+        await audio?.resume();
         const [wasm, response] = await Promise.all([
             import("./twotowers_recomp.mjs"),
             fetch("/disc.json"),
@@ -149,6 +146,9 @@ play.addEventListener("click", async () => {
             print: (line) => console.log(line),
             printErr: (line) => console.error(line),
         });
+        if (audio) {
+            globalThis.twoTowersAudioOutput = await startAudio(audio, game);
+        }
         game.FS.writeFile("/disc-manifest", files.join("\n") + "\n");
         const flush = await restoreProfile(game.FS);
         const persist = () => flush().catch((error) => console.error("Could not save browser data", error));

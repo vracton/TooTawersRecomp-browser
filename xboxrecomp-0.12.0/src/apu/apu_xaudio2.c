@@ -279,6 +279,23 @@ int xa2_get_buffer_size(void)
 #elif defined(__EMSCRIPTEN__)
 
 #include <emscripten/emscripten.h>
+#include <stdatomic.h>
+
+#define WEB_AUDIO_CAPACITY 8192u
+#define WEB_AUDIO_QUEUE 4096u
+
+static struct {
+    _Atomic uint32_t read;
+    _Atomic uint32_t write;
+    _Atomic uint32_t underruns;
+    _Atomic uint32_t enabled;
+    int16_t samples[WEB_AUDIO_CAPACITY * 2];
+} web_audio;
+
+EMSCRIPTEN_KEEPALIVE void *xbox_WebAudioBuffer(void)
+{
+    return &web_audio;
+}
 
 int xa2_init(void)
 {
@@ -287,30 +304,45 @@ int xa2_init(void)
 
 void xa2_shutdown(void)
 {
-    MAIN_THREAD_EM_ASM({ globalThis.twoTowersAudioOutput?.clear(); });
+    uint32_t write = atomic_load_explicit(&web_audio.write, memory_order_acquire);
+    atomic_store_explicit(&web_audio.read, write, memory_order_release);
 }
 
 int xa2_is_active(void)
 {
-    return MAIN_THREAD_EM_ASM_INT({ return !!globalThis.twoTowersAudioOutput; });
+    return atomic_load_explicit(&web_audio.enabled, memory_order_relaxed) != 0;
 }
 
 int xa2_submit_samples(const int16_t *samples, int num_samples)
 {
-    if (num_samples <= 0)
+    if (num_samples <= 0 || !xa2_is_active())
         return 0;
     if (num_samples > xa2_get_buffer_size())
         num_samples = xa2_get_buffer_size();
-    return MAIN_THREAD_EM_ASM_INT({
-        return globalThis.twoTowersAudioOutput?.submit(HEAP16, $0, $1) ?? 0;
-    }, samples, num_samples);
+
+    uint32_t write = atomic_load_explicit(&web_audio.write, memory_order_relaxed);
+    uint32_t read = atomic_load_explicit(&web_audio.read, memory_order_acquire);
+    if (write - read + (uint32_t)num_samples > WEB_AUDIO_QUEUE)
+        return 0;
+    uint32_t index = write & (WEB_AUDIO_CAPACITY - 1);
+    uint32_t first = WEB_AUDIO_CAPACITY - index;
+    if (first > (uint32_t)num_samples)
+        first = (uint32_t)num_samples;
+    memcpy(web_audio.samples + index * 2, samples, first * 2 * sizeof(*samples));
+    if (first < (uint32_t)num_samples)
+        memcpy(web_audio.samples, samples + first * 2,
+               ((uint32_t)num_samples - first) * 2 * sizeof(*samples));
+    atomic_store_explicit(&web_audio.write, write + (uint32_t)num_samples, memory_order_release);
+    return 1;
 }
 
 int xa2_queued_periods(void)
 {
-    return MAIN_THREAD_EM_ASM_INT({
-        return globalThis.twoTowersAudioOutput?.queuedPeriods() ?? -1;
-    });
+    if (!xa2_is_active())
+        return -1;
+    uint32_t read = atomic_load_explicit(&web_audio.read, memory_order_acquire);
+    uint32_t write = atomic_load_explicit(&web_audio.write, memory_order_acquire);
+    return (int)((write - read) / 256u);
 }
 
 int xa2_get_buffer_size(void)
