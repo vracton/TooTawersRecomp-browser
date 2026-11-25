@@ -179,3 +179,12 @@ game code. The simulation clock kept pace with wall time in the sampled
 segment. The current bottlenecks span both threads. The cap runs cover
 slightly different combat states, so the difference in overall FPS is not
 an isolated estimate of the renderer changes. See `build-web/climb-paced-play.log`.
+
+The generated browser RAM helpers now check the low 64 MiB first and take
+the direct load or store path there. MMIO and high-address aliases still
+use the existing handlers. After rebuilding the generated game, the
+default-cap run with detailed WebGL timing disabled averaged 27.1 FPS in
+the final 300 battle frames with 47.9 ms p95 and 442.5 MiB of Wasm memory.
+The startup movie finished in 18.11 seconds. The 22-second story sample
+averaged 29.98 FPS with zero audio worklet underruns. There were 132
+cumulative underruns by combat. See `build-web/climb-default-play.log`.

@@ -43,7 +43,8 @@ time to the first frame, FPS and 95th-percentile frame interval across the
 last 300 presents, Wasm linear memory, and audio underruns. Load `/?profile`
 for per-frame WebGL submission timings in the console. Those timings measure
 CPU-side submission and any waits it encounters. Use the browser profiler to
-measure process CPU and memory separately.
+measure process CPU and memory separately. `/?fps=60` and `/?fps=120` raise
+the gameplay cap for headroom tests. The default gameplay target is 30 FPS.
 
 On Windows with Edge and an AMD Radeon 780M, the browser reached the retail
 title screen, main menu, Normal difficulty, the skippable Bink intro, and
@@ -64,7 +65,7 @@ segment, the game clock kept pace with real time while rendering below its
 30 FPS target. The earlier browser profile measured 9.0 FPS and 605 ms at the
 95th percentile during the transition into the real-time prologue. Giving
 WebGL uniform blocks separate buffers removed the worst recurring upload
-stalls. The latest run logged 1,319 audio worklet underruns across startup,
+stalls. That baseline run logged 1,319 audio worklet underruns across startup,
 menus, intro, and battle.
 
 ## Desktop reference build

@@ -425,16 +425,20 @@ extern void xbox_WebWriteRegister(uint32_t va, uint32_t value, unsigned width);
 #define RECOMP_WEB_MEMORY(bits, type)                                         \
     static inline type recomp_web_read##bits(uint32_t va)                     \
     {                                                                        \
+        if (va < 0x04000000u)                                                 \
+            return *(volatile type *)((uintptr_t)g_xbox_mem_offset + va);      \
         if (va >= 0xFE800000u && va < 0xFEF00000u)                            \
             return (type)xbox_WebReadRegister(va, sizeof(type));              \
-        return *(volatile type *)recomp_guest_pointer(va);                    \
+        return *(volatile type *)xbox_WebGuestAddress(va);                    \
     }                                                                        \
     static inline type recomp_web_write##bits(uint32_t va, type value)        \
     {                                                                        \
-        if (va >= 0xFE800000u && va < 0xFEF00000u)                            \
+        if (va < 0x04000000u)                                                 \
+            *(volatile type *)((uintptr_t)g_xbox_mem_offset + va) = value;     \
+        else if (va >= 0xFE800000u && va < 0xFEF00000u)                       \
             xbox_WebWriteRegister(va, value, sizeof(type));                   \
         else                                                                 \
-            *(volatile type *)recomp_guest_pointer(va) = value;              \
+            *(volatile type *)xbox_WebGuestAddress(va) = value;                \
         return value;                                                        \
     }
 
