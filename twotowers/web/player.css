@@ -16,9 +16,19 @@ main {
 }
 
 canvas {
+    grid-area: 1 / 1;
     width: min(100vw, 100dvh * 4 / 3);
     height: min(100dvh, 100vw * 3 / 4);
     outline: none;
+}
+
+#gpu-canvas {
+    pointer-events: none;
+    visibility: hidden;
+}
+
+#gpu-canvas.active {
+    visibility: visible;
 }
 
 #launch {

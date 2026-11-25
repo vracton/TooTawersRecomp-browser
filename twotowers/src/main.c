@@ -1414,7 +1414,7 @@ int main(int argc, char **argv)
         return 1;
     }
     setenv("TWOTOWERS_GAME_DIR", "/game_files", 1);
-    setenv("RECOMP_RENDERER", "software", 1);
+    setenv("RECOMP_RENDERER", "webgl", 1);
     setenv("RECOMP_WINDOW_SIZE", "640x480", 1);
     setenv("RECOMP_ASPECT", "1.3333", 1);
     setenv("RECOMP_RENDER_SCALE", "1", 1);

@@ -2,6 +2,7 @@ import { restoreProfile } from "./persistence.mjs";
 import { startAudio } from "./audio.mjs";
 
 const canvas = document.querySelector("#canvas");
+const gpuCanvas = document.querySelector("#gpu-canvas");
 const launch = document.querySelector("#launch");
 const play = document.querySelector("#play");
 const status = document.querySelector("#status");
@@ -16,9 +17,30 @@ function connectCanvas(game) {
     const context = canvas.getContext("2d", { alpha: false });
     let image;
     let frames = 0;
+    let firstFrame;
     let previousFrame;
     const intervals = [];
     const started = performance.now();
+    function recordFrame(now) {
+        if (firstFrame === undefined) {
+            firstFrame = now;
+            launch.hidden = true;
+        }
+        ++frames;
+        if (previousFrame !== undefined) {
+            intervals.push(now - previousFrame);
+            if (intervals.length > 300) {
+                intervals.shift();
+            }
+        }
+        previousFrame = now;
+    }
+    globalThis.twoTowersGpuPresent = () => {
+        if (!gpuCanvas.classList.contains("active")) {
+            gpuCanvas.classList.add("active");
+        }
+        recordFrame(performance.now());
+    };
     globalThis.twoTowersPresent = (address, width, height, memory) => {
         const now = performance.now();
         if (!image || width !== image.width || height !== image.height) {
@@ -34,14 +56,7 @@ function connectCanvas(game) {
                 (color & 0xff00) | ((color >>> 16) & 0xff);
         }
         context.putImageData(image, 0, 0);
-        ++frames;
-        if (previousFrame !== undefined) {
-            intervals.push(now - previousFrame);
-            if (intervals.length > 300) {
-                intervals.shift();
-            }
-        }
-        previousFrame = now;
+        recordFrame(now);
     };
 
     globalThis.twoTowersUsage = () => {
@@ -49,12 +64,13 @@ function connectCanvas(game) {
         const sum = ordered.reduce((total, interval) => total + interval, 0);
         return {
             frames,
-            firstFrameSeen: frames > 0,
+            firstFrameMs: firstFrame === undefined ? null : Math.round(firstFrame - started),
             runningMs: Math.round(performance.now() - started),
             recentFps: sum ? 1000 * ordered.length / sum : null,
             frameTimeP95Ms: ordered[Math.floor(ordered.length * 0.95)] ?? null,
             wasmMemoryBytes: game.HEAPU8.byteLength,
             audioUnderruns: globalThis.twoTowersAudioOutput?.underruns() ?? null,
+            renderer: gpuCanvas.classList.contains("active") ? "webgl2" : "software",
         };
     };
 }
@@ -144,7 +160,6 @@ play.addEventListener("click", async () => {
         });
         connectCanvas(game);
         connectInput(game);
-        launch.hidden = true;
         canvas.focus();
         game.callMain([]);
     } catch (error) {

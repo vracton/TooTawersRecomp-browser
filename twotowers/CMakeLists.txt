@@ -141,6 +141,7 @@ if(EMSCRIPTEN)
         -O1
         -pthread
         -sPROXY_TO_PTHREAD
+        -sOFFSCREEN_FRAMEBUFFER
         -sMAX_WEBGL_VERSION=2
         -sALLOW_MEMORY_GROWTH
         -sINITIAL_MEMORY=268435456

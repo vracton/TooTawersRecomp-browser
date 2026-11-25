@@ -96,6 +96,7 @@ extern void xbox_FramebufferSetGpuOwned(int on);
     X(void, DeleteBuffers, (GLsizei, const GLuint *)) \
     X(void, BindBuffer, (GLenum, GLuint)) \
     X(void, BufferData, (GLenum, GLsizeiptr, const void *, GLenum)) \
+    X(void, BufferSubData, (GLenum, GLintptr, GLsizeiptr, const void *)) \
     X(void *, MapBufferRange, (GLenum, GLintptr, GLsizeiptr, GLbitfield)) \
     X(GLboolean, UnmapBuffer, (GLenum)) \
     X(void, BindBufferRange, (GLenum, GLuint, GLuint, GLintptr, GLsizeiptr)) \
@@ -197,6 +198,7 @@ static int g_persist;
 #define glDeleteBuffers p_glDeleteBuffers
 #define glBindBuffer p_glBindBuffer
 #define glBufferData p_glBufferData
+#define glBufferSubData p_glBufferSubData
 #define glMapBufferRange p_glMapBufferRange
 #define glUnmapBuffer p_glUnmapBuffer
 #define glBindBufferRange p_glBindBufferRange
@@ -233,13 +235,53 @@ static int g_persist;
 #define glRenderbufferStorageMultisample p_glRenderbufferStorageMultisample
 #define glFramebufferRenderbuffer p_glFramebufferRenderbuffer
 
+#ifdef __EMSCRIPTEN__
+#include "nv2a_webgl.inc"
+#define NV2A_GLSL_VERSION "#version 300 es\nprecision highp float;\nprecision highp int;\n"
+#define gpu_detach_gl() emscripten_webgl_make_context_current(0)
+#else
+#define NV2A_GLSL_VERSION "#version 330 core\n"
+#define gpu_detach_gl() SDL_GL_MakeCurrent(g_win, NULL)
+#endif
+
 static int gl_load(void)
 {
+#ifdef __EMSCRIPTEN__
+#define GLX_WEB_SLOT(slot, name)                                              \
+    if (!(*(void **)&slot = emscripten_webgl_get_proc_address("gl" #name))) {  \
+        fprintf(stderr, "  [GL] WebGL lacks gl" #name "\n");                  \
+        return 0;                                                            \
+    }
+#define GLX_LOAD(ret, name, args)                                             \
+    if (strcmp(#name, "ClearDepth") != 0 && strcmp(#name, "DrawBuffer") != 0 && \
+        strcmp(#name, "DrawElementsBaseVertex") != 0 &&                       \
+        strcmp(#name, "MapBufferRange") != 0 && strcmp(#name, "UnmapBuffer") != 0) { \
+        GLX_WEB_SLOT(p_gl##name, name)                                        \
+    }
+    GLFUNCS(GLX_LOAD)
+    GLX_WEB_SLOT(web_clear_depthf, ClearDepthf)
+    GLX_WEB_SLOT(web_draw_buffers, DrawBuffers)
+    GLX_WEB_SLOT(web_draw_elements, DrawElements)
+#undef GLX_LOAD
+#undef GLX_WEB_SLOT
+    web_pixel_store = p_glPixelStorei;
+    web_tex_image = p_glTexImage2D;
+    web_tex_sub_image = p_glTexSubImage2D;
+    web_read_pixels = p_glReadPixels;
+    p_glPixelStorei = web_set_pixel_store;
+    p_glTexImage2D = web_upload_texture;
+    p_glTexSubImage2D = web_update_texture;
+    p_glReadPixels = web_read_texture;
+    p_glClearDepth = web_clear_depth;
+    p_glDrawBuffer = web_select_draw_buffer;
+    p_glDrawElementsBaseVertex = web_draw_base;
+#else
 #define GLX_LOAD(ret, name, args) \
     if (!(*(void **)&p_gl##name = SDL_GL_GetProcAddress("gl" #name))) { \
         fprintf(stderr, "  [GL] the driver lacks gl" #name "\n"); return 0; }
     GLFUNCS(GLX_LOAD)
 #undef GLX_LOAD
+#endif
     return 1;
 }
 
@@ -386,10 +428,12 @@ static void gpu_ring_fresh(GRing *r)
 {
     glBufferData(r->target, r->cap, NULL, GL_STREAM_DRAW);
     if (r == &g_rub) g_rub_fresh = 1;
+#ifndef __EMSCRIPTEN__
     if (g_ringtest > 0) {
         void *p = glMapBufferRange(r->target, 0, r->cap, GL_MAP_WRITE_BIT);
         if (p) { memset(p, 0x7B, r->cap); glUnmapBuffer(r->target); }
     }
+#endif
 }
 /* (2.0.1) a persistent ring: one store mapped for good, written straight into; split in RING_SEGS parts, each fenced as the
  * writing leaves it and waited on (rarely: the GPU is a frame or so behind, the ring megabytes long) before it is written again */
@@ -438,7 +482,6 @@ static uint32_t gpu_ring_persist(GRing *r, const void *data, uint32_t bytes, uin
 static uint32_t gpu_ring(GRing *r, const void *data, uint32_t bytes, uint32_t align)
 {
     uint32_t at;
-    void *p;
     if (g_ringtest < 0) { const char *e = getenv("RECOMP_GL_RINGTEST"); g_ringtest = e ? (atoi(e) == 2 ? 2 : 1) : 0; }
     if (g_persist && !g_ringtest) { at = gpu_ring_persist(r, data, bytes, align); if (at != 0xFFFFFFFEu) return at; }
     if (!r->buf || r->cap < bytes) {
@@ -455,10 +498,14 @@ static uint32_t gpu_ring(GRing *r, const void *data, uint32_t bytes, uint32_t al
         gpu_ring_fresh(r);   /* a fresh store */
         at = 0;
     }
-    p = glMapBufferRange(r->target, at, bytes, GL_MAP_WRITE_BIT | GL_MAP_UNSYNCHRONIZED_BIT | GL_MAP_INVALIDATE_RANGE_BIT);
+#ifdef __EMSCRIPTEN__
+    glBufferSubData(r->target, at, bytes, data);
+#else
+    void *p = glMapBufferRange(r->target, at, bytes, GL_MAP_WRITE_BIT | GL_MAP_UNSYNCHRONIZED_BIT | GL_MAP_INVALIDATE_RANGE_BIT);
     if (!p) return 0xFFFFFFFFu;
     memcpy(p, data, bytes);
     glUnmapBuffer(r->target);
+#endif
     r->pos = at + bytes;
     return at;
 }
@@ -1120,7 +1167,7 @@ static void gpu_samplers_drop(void)
  * so the CPU side fills them with the same bytes. */
 
 static const char s_glsl_vs_main[] =
-"#version 330 core\n"
+NV2A_GLSL_VERSION
 "layout(std140) uniform VSC { vec4 vp; };\n"
 "layout(location = 0) in vec4 a_p;\n"
 "layout(location = 1) in vec4 a_d0;\n"
@@ -1140,7 +1187,7 @@ static const char s_glsl_vs_main[] =
 /* Declarations shared by the general fragment shader and the specialized
  * ones (as the HLSL's text before ps_main). */
 static const char s_glsl_ps_head[] =
-"#version 330 core\n"
+NV2A_GLSL_VERSION
 "struct CStage { ivec4 cin; ivec4 ain; ivec4 f1; ivec4 f2; ivec4 f3; vec4 c0; vec4 c1; };\n"
 "layout(std140) uniform PSC {\n"
 "  CStage st[8];\n"
@@ -1291,7 +1338,7 @@ static const char s_glsl_ps_main[] =
  * +1 for drawing into a surface (image row 0 at the top, as everything
  * here), -1 for the window, whose rows count from the bottom. */
 static const char s_glsl_vs_tri[] =
-"#version 330 core\n"
+NV2A_GLSL_VERSION
 "layout(std140) uniform CLC { vec4 clear_color; };\n"
 "uniform float u_ys;\n"
 "out vec2 v_uv;\n"
@@ -1306,7 +1353,7 @@ static const char s_glsl_vs_tri[] =
 "}\n";
 
 static const char s_glsl_ps_tri[] =
-"#version 330 core\n"
+NV2A_GLSL_VERSION
 "layout(std140) uniform CLC { vec4 clear_color; };\n"
 "layout(std140) uniform POSTC { vec4 post; vec4 look; vec4 look2; vec4 shade; vec4 light; };\n"
 "uniform sampler2D tx0;\n"
@@ -1466,8 +1513,8 @@ static GLuint gpu_tri_program(const char *vs_def, const char *fs_def, GLint *ys_
 {
     const char *vsrc[3], *fsrc[3];
     GLuint vs, fs, p;
-    vsrc[0] = "#version 330 core\n"; vsrc[1] = vs_def; vsrc[2] = s_glsl_vs_tri + strlen("#version 330 core\n");
-    fsrc[0] = "#version 330 core\n"; fsrc[1] = fs_def; fsrc[2] = s_glsl_ps_tri + strlen("#version 330 core\n");
+    vsrc[0] = NV2A_GLSL_VERSION; vsrc[1] = vs_def; vsrc[2] = s_glsl_vs_tri + strlen(NV2A_GLSL_VERSION);
+    fsrc[0] = NV2A_GLSL_VERSION; fsrc[1] = fs_def; fsrc[2] = s_glsl_ps_tri + strlen(NV2A_GLSL_VERSION);
     vs = gpu_shader_now(GL_VERTEX_SHADER, vsrc, 3, what);
     fs = vs ? gpu_shader_now(GL_FRAGMENT_SHADER, fsrc, 3, what) : 0;
     if (!vs || !fs) { if (vs) glDeleteShader(vs); return 0; }
@@ -1599,6 +1646,10 @@ static int gpu_init(void)
     const char *e = getenv("RECOMP_RENDERER");
     GLint maj = 0, mnr = 0;
     if (e && !strcasecmp(e, "software")) return 0;
+#ifdef __EMSCRIPTEN__
+    if (!web_bind_context())
+        return 0;
+#else
     g_glc = (SDL_GLContext)xbox_FramebufferGLContext(10000);
     g_win = (SDL_Window *)xbox_FramebufferHwnd();
     if (!g_win || !g_glc) {
@@ -1609,13 +1660,15 @@ static int gpu_init(void)
         fprintf(stderr, "  [GL] cannot use the OpenGL context (%s); using the software renderer\n", SDL_GetError());
         return 0;
     }
-    if (!gl_load()) { SDL_GL_MakeCurrent(g_win, NULL); return 0; }
+#endif
+    if (!gl_load()) { gpu_detach_gl(); return 0; }
     glGetIntegerv(GL_MAJOR_VERSION, &maj);
     glGetIntegerv(GL_MINOR_VERSION, &mnr);
     if (getenv("TT_PRIME_NOTE")) fprintf(stderr, "  [GL] %s\n", getenv("TT_PRIME_NOTE"));
     if (getenv("__GL_THREADED_OPTIMIZATIONS") && getenv("__GL_THREADED_OPTIMIZATIONS")[0] == '1') fprintf(stderr, "  [GL] NVIDIA's threaded driver on (TT_GL_THREADED=0: off)\n");
     fprintf(stderr, "  [GL] %s / %s / OpenGL %s\n", (const char *)glGetString(GL_VENDOR),
             (const char *)glGetString(GL_RENDERER), (const char *)glGetString(GL_VERSION));
+#ifndef __EMSCRIPTEN__
     {   /* (2.0.0) the driver's own errors and warnings in the log, as [GLDEBUG] lines */
         typedef void (APIENTRY *dbgcb_t)(GLenum, GLenum, GLuint, GLenum, GLsizei, const GLchar *, const void *);
         typedef void (APIENTRY *dbgset_t)(dbgcb_t, const void *);
@@ -1633,7 +1686,7 @@ static int gpu_init(void)
     }
     if (maj < 3 || (maj == 3 && mnr < 3)) {
         fprintf(stderr, "  [GL] OpenGL 3.3 is needed; using the software renderer\n");
-        SDL_GL_MakeCurrent(g_win, NULL);
+        gpu_detach_gl();
         return 0;
     }
     glGetIntegerv(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, &g_ubo_align);
@@ -1656,6 +1709,13 @@ static int gpu_init(void)
         if (p_glMaxShaderCompilerThreadsKHR) p_glMaxShaderCompilerThreadsKHR(0xFFFFFFFFu);
         g_parallel = 1;
     }
+#else
+    glGetIntegerv(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, &g_ubo_align);
+    if (g_ubo_align < 16)
+        g_ubo_align = 16;
+    g_parallel = gl_has_ext("GL_KHR_parallel_shader_compile") ||
+        gl_has_ext("KHR_parallel_shader_compile");
+#endif
     fprintf(stderr, "  [GL] shaders compiled %s; anisotropic filtering up to x%.0f\n",
             g_parallel ? "in the background" : "when first used", g_max_aniso);
 
@@ -1664,16 +1724,16 @@ static int gpu_init(void)
         const char *fs[2] = { s_glsl_ps_head, s_glsl_ps_main };
         g_vs_main = gpu_shader_now(GL_VERTEX_SHADER, vs, 1, "the main vertex shader");
         g_fs_main = gpu_shader_now(GL_FRAGMENT_SHADER, fs, 2, "the combiner shader");
-        if (!g_vs_main || !g_fs_main) { SDL_GL_MakeCurrent(g_win, NULL); return 0; }
+        if (!g_vs_main || !g_fs_main) { gpu_detach_gl(); return 0; }
         g_pr_main = gpu_link_now(g_vs_main, g_fs_main, "the main program");
-        if (!g_pr_main) { SDL_GL_MakeCurrent(g_win, NULL); return 0; }
+        if (!g_pr_main) { gpu_detach_gl(); return 0; }
     }
     g_pr_copy = gpu_tri_program("", "", &g_loc_ys_copy, "the copy shader");
     g_pr_present = gpu_tri_program("", "#define PRESENT\n", &g_loc_ys_present, "the present shader");
     g_pr_fxaa = gpu_tri_program("", "#define FXAA\n", &g_loc_ys_fxaa, "the FXAA shader");
     g_pr_blit = gpu_tri_program("#define BLIT\n", "", &g_loc_ys_blit, "the blit shader");
     g_pr_clear = gpu_tri_program("", "#define CLEAR\n", NULL, "the clear shader");
-    if (!g_pr_copy || !g_pr_present || !g_pr_blit || !g_pr_clear) { SDL_GL_MakeCurrent(g_win, NULL); return 0; }
+    if (!g_pr_copy || !g_pr_present || !g_pr_blit || !g_pr_clear) { gpu_detach_gl(); return 0; }
     if (g_pr_clear) { glUseProgram(g_pr_clear); glUniform1f(glGetUniformLocation(g_pr_clear, "u_ys"), 1.0f); }
 
     glGenVertexArrays(1, &g_vao);
@@ -2320,7 +2380,7 @@ static char *hwvp_translate(HwVp *e)
     for (i = 0; i < 16; i++) if (used & (1u << i)) e->inreg[e->nin++] = (uint8_t)i;
 
     hwvp_cat(&p, &cap, &len,
-        "#version 330 core\n"
+        NV2A_GLSL_VERSION
         "layout(std140) uniform VSC { vec4 vp; };\n"
         "layout(std140) uniform VPC { vec4 c[192]; };\n"
         "vec4 kc(int i) { return (i >= 0 && i < 192) ? c[i] : vec4(0.0, 0.0, 0.0, 1.0); }\n"
@@ -2786,8 +2846,8 @@ static int shm_programs(void)
     for (i = 0; i < 5; i++) {
         const char *vsrc[3], *fsrc[3];
         GLuint vs, fs;
-        vsrc[0] = "#version 330 core\n"; vsrc[1] = ""; vsrc[2] = s_glsl_vs_tri + strlen("#version 330 core\n");
-        fsrc[0] = "#version 330 core\n"; fsrc[1] = head; fsrc[2] = body[i];
+        vsrc[0] = NV2A_GLSL_VERSION; vsrc[1] = ""; vsrc[2] = s_glsl_vs_tri + strlen(NV2A_GLSL_VERSION);
+        fsrc[0] = NV2A_GLSL_VERSION; fsrc[1] = head; fsrc[2] = body[i];
         vs = gpu_shader_now(GL_VERTEX_SHADER, vsrc, 3, "the shadow repair's vertex shader");
         fs = vs ? gpu_shader_now(GL_FRAGMENT_SHADER, fsrc, 3, "a shadow repair shader") : 0;
         if (!vs || !fs) { if (vs) glDeleteShader(vs); g_sh_bad = 1; return 0; }
@@ -3108,13 +3168,18 @@ cpu_verts_ready:
         gpu_bind_stages();
         gpu_set_blend(0);
         gpu_set_depth(g_cur_ds != NULL);
+        uint32_t vertex_offset = 0;
+#ifdef __EMSCRIPTEN__
+        vertex_offset = vb_at;
+        g_sh.vao = 0;
+#endif
         if (g_sh.vao != 1) {
             /* the CPU path's vertex layout: 8 float4s (GVert) */
             glBindVertexArray(g_vao);
             glBindBuffer(GL_ARRAY_BUFFER, g_rvb.buf);
             for (i = 0; i < 8; i++) {
                 glEnableVertexAttribArray(i);
-                glVertexAttribPointer(i, 4, GL_FLOAT, GL_FALSE, sizeof(GVert), (const void *)(uintptr_t)(16 * i));
+                glVertexAttribPointer(i, 4, GL_FLOAT, GL_FALSE, sizeof(GVert), (const void *)(uintptr_t)(vertex_offset + 16 * i));
             }
             g_sh.vao = 1;
         }
@@ -3122,7 +3187,7 @@ cpu_verts_ready:
         gpu_use(prog);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g_rib.buf);
         glDrawElementsBaseVertex(GL_TRIANGLES, (GLsizei)g_nidx, GL_UNSIGNED_INT, (const void *)(uintptr_t)ib_at,
-                                 (GLint)(vb_at / sizeof(GVert)));
+                                 (GLint)((vb_at - vertex_offset) / sizeof(GVert)));
     }
     s_gpu.tris_drawn += g_nidx / 3;
     s_gpu.drawn_offset = s_gpu.color_offset;
@@ -3471,7 +3536,11 @@ static void gpu_present(uint32_t base, uint32_t pitch)
         }
         if (k++ % every == 0) gpu_readback(base, pitch);
     }
+#ifdef __EMSCRIPTEN__
+    if (!web_context || !s) return;
+#else
     if (!g_win || !s) return;
+#endif
     gsurf_sync_from_mem(s);
     gsurf_resolve(s);   /* (MSAA: the picture from its samples) */
     {
@@ -3480,8 +3549,12 @@ static void gpu_present(uint32_t base, uint32_t pitch)
         gpu_draw_overlays(s, wide);
     }
     g_fhash_cur ^= 1; g_fhash_n[g_fhash_cur] = 0;
+#ifdef __EMSCRIPTEN__
+    emscripten_webgl_get_drawing_buffer_size(web_context, &g_sc_w, &g_sc_h);
+#else
     if (SDL_GetWindowFlags(g_win) & SDL_WINDOW_MINIMIZED) goto settings;
     SDL_GL_GetDrawableSize(g_win, &g_sc_w, &g_sc_h);
+#endif
     if (g_sc_w < 8 || g_sc_h < 8) goto settings;
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glDisable(GL_SCISSOR_TEST);
@@ -3550,13 +3623,20 @@ static void gpu_present(uint32_t base, uint32_t pitch)
         }
     }
     if (g_vsync_on < 0) { const char *v = getenv("RECOMP_VSYNC"); g_vsync_on = v && v[0] == '1'; }
+#ifndef __EMSCRIPTEN__
     if (g_vsync_applied != g_vsync_on) {
         /* adaptive vsync where the driver has it, else plain */
         if (!g_vsync_on || SDL_GL_SetSwapInterval(-1) != 0) SDL_GL_SetSwapInterval(g_vsync_on ? 1 : 0);
         g_vsync_applied = g_vsync_on;
     }
+#endif
     frame_limit();
+#ifdef __EMSCRIPTEN__
+    emscripten_webgl_commit_frame();
+    MAIN_THREAD_ASYNC_EM_ASM({ globalThis.twoTowersGpuPresent?.(); });
+#else
     SDL_GL_SwapWindow(g_win);
+#endif
     gpu_sh_reset();
     {
         static int said;
