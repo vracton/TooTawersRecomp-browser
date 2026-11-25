@@ -101,3 +101,25 @@ real-time cutscene run through before testing movement. Enter can pause the
 opening battle, which changes the performance sample. `/?profile`, the
 on-screen profiler, and separate browser-process measurements can be used
 to compare the same section before and after a change.
+
+## Frame pacing work
+
+The default gameplay target remains 30 FPS. The performance target is
+sustained 60 FPS in actual combat with the higher ceiling used to expose
+headroom. Bink movies keep their original pacing.
+
+### Movie reads
+
+The browser mounts `fmv` separately with 1 MiB FetchFS chunks. The other
+disc files still use 256 KiB chunks. The loopback server now recognizes the
+repeated slash that FetchFS inserts between the movie mount URL and the file
+name. It still looks up files in the validated disc manifest.
+
+On the Radeon 780M in hardware-accelerated Edge, the startup logo movie
+used 13 successful range GETs, compared with about 49 256 KiB chunks for
+the same file. It finished in 19.7 seconds with zero audio underruns in the
+12-second sample. The first 22 seconds of `mont.bik` produced 28.1 FPS over
+the latest 300 frames, 47.5 ms p95, and one new audio worklet underrun.
+These samples verify playback and measure stalls. Direct agreement between
+the video frames and the audio track has yet to be measured. Local logs are
+`build-web/climb-verified.log` and `build-web/climb-server-main.log`.

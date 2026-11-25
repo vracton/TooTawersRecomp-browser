@@ -30,6 +30,9 @@ int tt_web_mount_disc(void)
     backend_t disc = wasmfs_create_fetch_backend("/disc", 256 * 1024);
     if (!disc || wasmfs_create_directory("/game_files", 0755, disc) < 0)
         goto done;
+    backend_t movies = wasmfs_create_fetch_backend("/disc/fmv", 1024 * 1024);
+    if (!movies || wasmfs_create_directory("/game_files/fmv", 0755, movies) < 0)
+        goto done;
 
     char path[1024];
     static const char prefix[] = "/game_files/";
@@ -42,7 +45,8 @@ int tt_web_mount_disc(void)
         *newline = '\0';
         if (create_parent_directories(path) < 0)
             goto done;
-        int fd = wasmfs_create_file(path, S_IRUSR, disc);
+        backend_t backend = strncmp(entry, "fmv/", 4) == 0 ? movies : disc;
+        int fd = wasmfs_create_file(path, S_IRUSR, backend);
         if (fd < 0)
             goto done;
         close(fd);
