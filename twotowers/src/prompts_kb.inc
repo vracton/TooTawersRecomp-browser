@@ -565,7 +565,7 @@ static volatile LONG s_kb_scan_busy, s_kb_scan_done;
 static int s_kb_found_n;
 static DWORD WINAPI kb_scan_thread(LPVOID arg)
 {
-    const uint8_t *m = (const uint8_t *)xbox_GetMemoryOffset();
+    const uint8_t *m = (const uint8_t *)xbox_GuestAddress(0x80000000u);
     uint32_t a;
     int i, n = 0;
     static uint8_t first[65536 / 8];   /* the hints' first characters, for a quick no */
@@ -573,9 +573,10 @@ static DWORD WINAPI kb_scan_thread(LPVOID arg)
     memset(first, 0, sizeof first);
     for (i = 0; i < KB_TXT_N; i++) if (s_kb_orig[i].n) first[s_kb_orig[i].u[0] >> 3] |= (uint8_t)(1u << (s_kb_orig[i].u[0] & 7));
     for (a = 0x80010000u; a < 0x83FFFF00u && n < KB_TXT_MAX; a += 2) {   /* (the heap: 0x80000000 on) */
-        uint16_t c0 = (uint16_t)(m[a] | m[a + 1] << 8), c1;
+        const uint8_t *entry = m + (a - 0x80000000u);
+        uint16_t c0 = (uint16_t)(entry[0] | entry[1] << 8), c1;
         if (!(first[c0 >> 3] & (1u << (c0 & 7)))) continue;
-        c1 = (uint16_t)(m[a + 2] | m[a + 3] << 8);
+        c1 = (uint16_t)(entry[2] | entry[3] << 8);
         for (i = 0; i < KB_TXT_N; i++)
             if (c0 == s_kb_orig[i].u[0] && c1 == s_kb_orig[i].u[1] && kb_txt_is(a, s_kb_orig[i].u, s_kb_orig[i].n)) {
                 s_kb_found[n].at = a; s_kb_found[n].which = i; n++;

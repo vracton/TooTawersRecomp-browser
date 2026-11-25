@@ -9,13 +9,13 @@
 #include "gfx_menu.h"
 #include "tt_env.h"
 
-extern ptrdiff_t xbox_GetMemoryOffset(void);
+#include "kernel/xbox_memory_layout.h"
 extern void (*volatile xbox_tex_observer)(uint32_t hash, uint32_t *argb, int w, int h);
 extern volatile long xbox_tex_rev;
 extern FILE *tt_exe_fopen(const char *rel);
 extern void tt_dbg(const char *fmt, ...);
 
-#define G16(a) (*(volatile uint16_t *)(xbox_GetMemoryOffset() + (uint32_t)(a)))
+#define G16(a) (*(volatile uint16_t *)xbox_GuestAddress(a))
 
 #include "prompts.inc"
 

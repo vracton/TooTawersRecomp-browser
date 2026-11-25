@@ -26,11 +26,11 @@
 #include <string.h>
 #include <math.h>
 
-extern ptrdiff_t xbox_GetMemoryOffset(void);
-#define G8(a)  (*(volatile uint8_t *)(xbox_GetMemoryOffset() + (uint32_t)(a)))
-#define G16(a) (*(volatile uint16_t *)(xbox_GetMemoryOffset() + (uint32_t)(a)))
-#define G32(a) (*(volatile uint32_t *)(xbox_GetMemoryOffset() + (uint32_t)(a)))
-#define GF(a)  (*(volatile float *)(xbox_GetMemoryOffset() + (uint32_t)(a)))
+#include "kernel/xbox_memory_layout.h"
+#define G8(a)  (*(volatile uint8_t *)xbox_GuestAddress(a))
+#define G16(a) (*(volatile uint16_t *)xbox_GuestAddress(a))
+#define G32(a) (*(volatile uint32_t *)xbox_GuestAddress(a))
+#define GF(a)  (*(volatile float *)xbox_GuestAddress(a))
 extern void tt_dbg(const char *fmt, ...);
 extern uint32_t tt_gcall(uint32_t va, uint32_t thisptr, int n, const uint32_t *args);
 
@@ -807,7 +807,6 @@ static int rmb_own(void)
  * put at its last frame: the game's loop (0x000E8B70) ends at frame ==
  * frames - 1, as at its end. */
 #include <stddef.h>
-extern ptrdiff_t xbox_GetMemoryOffset(void);
 static uint32_t bink_find(void)
 {
     const uint8_t *m = (const uint8_t *)(uintptr_t)xbox_GetMemoryOffset();

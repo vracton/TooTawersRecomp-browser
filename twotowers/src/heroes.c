@@ -43,14 +43,14 @@
 extern DWORD tt_sim_tick(void);
 #define GetTickCount() tt_sim_tick()
 
-extern ptrdiff_t xbox_GetMemoryOffset(void);
+#include "kernel/xbox_memory_layout.h"
 extern void tt_dbg(const char *fmt, ...);
 extern uint32_t tt_gcall(uint32_t va, uint32_t thisptr, int n, const uint32_t *args);
 extern uint32_t tt_guest_esp(void);
-#define G8(a)  (*(volatile uint8_t *)(xbox_GetMemoryOffset() + (uint32_t)(a)))
-#define G16(a) (*(volatile uint16_t *)(xbox_GetMemoryOffset() + (uint32_t)(a)))
-#define G32(a) (*(volatile uint32_t *)(xbox_GetMemoryOffset() + (uint32_t)(a)))
-#define GF(a)  (*(volatile float *)(xbox_GetMemoryOffset() + (uint32_t)(a)))
+#define G8(a)  (*(volatile uint8_t *)xbox_GuestAddress(a))
+#define G16(a) (*(volatile uint16_t *)xbox_GuestAddress(a))
+#define G32(a) (*(volatile uint32_t *)xbox_GuestAddress(a))
+#define GF(a)  (*(volatile float *)xbox_GuestAddress(a))
 
 static int log_on(void)
 {
@@ -2290,7 +2290,7 @@ int tt_heroes_shield_show(int on, int level)
     if (!s_shv_n || s_shv_n > 64) return 0;
     nb = 48u * s_shv_n;
     if (s_shv_level != level) {   /* a new level: find them (the model's copy in the level's contiguous memory) */
-        const volatile uint32_t *w = (const volatile uint32_t *)(xbox_GetMemoryOffset() + 0x80000000u);
+        const volatile uint32_t *w = (const volatile uint32_t *)xbox_GuestAddress(0x80000000u);
         uint32_t first, nw = (0x04000000u - nb) / 4u; s_shv_nat = 0; s_shv_hidden = 0;
         memcpy(&first, s_shv_sig, 4);
         for (i = 0; i < nw && s_shv_nat < 4; i++) if (w[i] == first) {
@@ -3085,7 +3085,7 @@ static void hero_size_bind(uint32_t base,int g)
 {
     if(g!=s_size_guest||!s_size_plan.count||base<0x80000000u||s_size_len>0x88000000u-base)return;
     if(G32(base)!=9||G32(base+4)!=s_size_tab)return;
-    unsigned char *d=(unsigned char *)(xbox_GetMemoryOffset()+base);
+    unsigned char *d=(unsigned char *)xbox_GuestAddress(base);
     if(!ts_apply(&s_size_plan,d,s_size_len,1.0f,1.0f)){
         tt_dbg("[SIZE] datos residentes distintos: desactivado sin escribir\n");return;
     }
@@ -4067,7 +4067,7 @@ void tt_heroes_endlvl_show(const char *skin)
     if (g == s_end_shown) return;
     if (!endlvl_pic(g, want)) { tt_dbg("[HEROES] results picture: %s's could not be made\n", g >= 0 ? s_skins[g].name : "isildur"); return; }
     {   /* (its pages read-only, as the game left them: opened for the copy, then as they were) */
-        uint8_t *dst = (uint8_t *)xbox_GetMemoryOffset() + s_end_mem; DWORD old = 0;
+        uint8_t *dst = (uint8_t *)xbox_GuestAddress(s_end_mem); DWORD old = 0;
         if (!VirtualProtect(dst, 0x10000, PAGE_READWRITE, &old)) { tt_dbg("[HEROES] results picture: its memory could not be opened\n"); return; }
         memcpy(dst, want, 0x10000);
         { DWORD o2; VirtualProtect(dst, 0x10000, old, &o2); } }
@@ -6021,7 +6021,7 @@ static void fe_spawn_extras(void)
     s_spawning = 1;
     static int own_anim = -1;   /* testing: TT_FE_OWNANIM, the menu file's own animation sets */
     uint32_t mesh[N_SEL], anim[N_SEL], tex[N_SEL], wmesh = 0, wtex = 0, gwm[N_SEL], gwt[N_SEL];
-    const volatile uint32_t *w = (const volatile uint32_t *)(xbox_GetMemoryOffset() + 0x80000000u);
+    const volatile uint32_t *w = (const volatile uint32_t *)xbox_GuestAddress(0x80000000u);
     const uint32_t nw = (0x04000000u - 0x20u) / 4u, KEY0 = FE_KEY(0);
     uint32_t i, nearp = s_fe_last_args[1];
     const int fewlog = getenv("TT_FEWLOG") != NULL;
@@ -7273,7 +7273,7 @@ void tt_framelog(void)
         if(enabled&&dir){
             float next=s_size_scale+(dir>0?0.25f:-0.25f);
             if(next<0.5f)next=0.5f;if(next>1.0f)next=1.0f;
-            unsigned char *d=(unsigned char *)(xbox_GetMemoryOffset()+s_size_base);
+            unsigned char *d=(unsigned char *)xbox_GuestAddress(s_size_base);
             if(G32(s_size_base)==9 &&G32(s_size_base+4)==s_size_tab
                 &&ts_apply(&s_size_plan,d,s_size_len,s_size_scale,next)){
                 s_size_scale=next;tt_dbg("[SIZE] %s: %.0f%% (colision original)\n",s_skins[s_guest].name,100.0f*next);
@@ -7389,7 +7389,7 @@ void tt_framelog(void)
     if (getenv("TT_LADFIND") && G32(0x43B15Cu) >= 0x80000000u) {   /* testing: the siege ladders' names in memory, and what points at them */
         static int fr2;
         if (++fr2 == 90) {
-            const unsigned char *M = (const unsigned char *)(xbox_GetMemoryOffset() + 0x80000000u);
+            const unsigned char *M = (const unsigned char *)xbox_GuestAddress(0x80000000u);
             uint32_t o, names[64]; int nn = 0, i;
             for (o = 0; o + 16 < 0x4000000u && nn < 64; o++)
                 if (M[o] == 's' && !memcmp(M + o, "siegeLadderObj", 14)) { names[nn++] = 0x80000000u + o; tt_dbg("[LAD] name %08X %.20s\n", 0x80000000u + o, (const char *)M + o); }
@@ -7911,7 +7911,7 @@ int tt_hk(int id, int phase, uint32_t *r)
         FILE *o;
         s_memdump_arm = 2;
         tt_dbg("[SHOT] dump: projectile %08X\n", s_launching);
-        if ((o = fopen(getenv("TT_SHOTMEM"), "wb"))) { fwrite((const void *)(xbox_GetMemoryOffset() + 0x80000000u), 1, 0x4000000u, o); fclose(o); }
+        if ((o = fopen(getenv("TT_SHOTMEM"), "wb"))) { fwrite((const void *)xbox_GuestAddress(0x80000000u), 1, 0x4000000u, o); fclose(o); }
     }
     /* Gandalf's beam: as his bolt leaves (the launch done: the projectile
      * holds where it left, +0x3E8, and where it is aimed, +0x3F8), a line

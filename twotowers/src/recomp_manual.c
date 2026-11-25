@@ -23,8 +23,8 @@
 #include <stddef.h>
 extern __thread uint32_t g_esp, g_ecx, g_esi, g_edi, g_ebx;
 static uint32_t g_ebx_dbg(void) { return g_ebx; }
-extern ptrdiff_t xbox_GetMemoryOffset(void);
-#define TT_MEM32(a) (*(volatile uint32_t *)((char *)xbox_GetMemoryOffset() + (uint32_t)(a)))
+#include "kernel/xbox_memory_layout.h"
+#define TT_MEM32(a) (*(volatile uint32_t *)xbox_GuestAddress(a))
 
 /* ── ICALL trace ring buffer ───────────────────────────────── */
 
