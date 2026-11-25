@@ -70,6 +70,26 @@ add_subdirectory(${XBOXRECOMP_DIR} ${CMAKE_BINARY_DIR}/xboxrecomp)
 # is silently left out of the build and shows up as unresolved externals.
 file(GLOB RECOMP_GEN_SOURCES CONFIGURE_DEPENDS "src/recomp/gen/*.c")
 
+if(EMSCRIPTEN)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    set(WEB_RECOMP_SOURCES)
+    set(WEB_RECOMP_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/recomp")
+    set(WEB_MEMORY_LOWERING "${CMAKE_CURRENT_SOURCE_DIR}/web/lower_memory.py")
+    file(MAKE_DIRECTORY "${WEB_RECOMP_DIRECTORY}")
+    foreach(source IN LISTS RECOMP_GEN_SOURCES)
+        get_filename_component(name "${source}" NAME)
+        set(output "${WEB_RECOMP_DIRECTORY}/${name}")
+        add_custom_command(
+            OUTPUT "${output}"
+            COMMAND Python3::Interpreter "${WEB_MEMORY_LOWERING}" "${source}" "${output}"
+            DEPENDS "${source}" "${WEB_MEMORY_LOWERING}"
+            VERBATIM
+        )
+        list(APPEND WEB_RECOMP_SOURCES "${output}")
+    endforeach()
+    set(RECOMP_GEN_SOURCES ${WEB_RECOMP_SOURCES})
+endif()
+
 # Core game sources
 set(GAME_SOURCES
     src/main.c
@@ -107,6 +127,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE xboxrecomp)
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/src/recomp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/gen
     ${XBOXRECOMP_DIR}/include
 )
 
@@ -116,23 +137,25 @@ if(EMSCRIPTEN)
     target_compile_options(${PROJECT_NAME} PRIVATE
         -Wno-incompatible-pointer-types -Wno-int-conversion -Wno-format)
     target_link_options(${PROJECT_NAME} PRIVATE
+        -O1
         -pthread
         -sPROXY_TO_PTHREAD
-        -sOFFSCREENCANVAS_SUPPORT
-        -sOFFSCREEN_FRAMEBUFFER
         -sMAX_WEBGL_VERSION=2
         -sALLOW_MEMORY_GROWTH
         -sINITIAL_MEMORY=268435456
-        -sSTACK_SIZE=67108864
+        -sSTACK_SIZE=8388608
+        -sDEFAULT_PTHREAD_STACK_SIZE=8388608
         -sWASMFS
         -sFORCE_FILESYSTEM
         -sMODULARIZE
         -sEXPORT_ES6
         -sINVOKE_RUN=0
+        -g2
+        -sASSERTIONS=1
         -sEXPORTED_RUNTIME_METHODS=FS,callMain,HEAPU8
     )
     set_target_properties(${PROJECT_NAME} PROPERTIES SUFFIX ".mjs")
-    foreach(asset index.html player.css player.mjs persistence.mjs)
+    foreach(asset index.html player.css player.mjs persistence.mjs audio.mjs pcm-player.mjs)
         configure_file(web/${asset} ${CMAKE_CURRENT_BINARY_DIR}/${asset} COPYONLY)
     endforeach()
 elseif(WIN32)

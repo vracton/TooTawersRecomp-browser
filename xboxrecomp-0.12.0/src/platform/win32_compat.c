@@ -827,7 +827,11 @@ HANDLE CreateThread(LPSECURITY_ATTRIBUTES sa, SIZE_T stackSize,
     /* Translated code nests deeply on the native stack: the Windows build
      * links with a 64 MB default stack, which every thread created with a
      * size of 0 inherits. Same here (address space only until touched). */
+#ifdef __EMSCRIPTEN__
+    pthread_attr_setstacksize(&attr, stackSize < 65536 ? (2u << 20) : stackSize);
+#else
     pthread_attr_setstacksize(&attr, stackSize < 65536 ? (64u << 20) : stackSize);
+#endif
 
     if (pthread_create(&o->thread, &attr, thread_trampoline, o) != 0
         && (pthread_attr_setstacksize(&attr, 8u << 20), pthread_create(&o->thread, &attr, thread_trampoline, o) != 0)) {   /* (1.9.9: a stack too small for

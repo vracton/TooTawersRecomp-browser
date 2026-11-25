@@ -176,13 +176,12 @@ static void twotowers_setup_paths_and_log(void)
 {
     char ini_game[MAX_PATH] = "";
     const char *env_game = getenv("TWOTOWERS_GAME_DIR");
-    char *slash;
 
 #ifdef __EMSCRIPTEN__
     snprintf(g_exe_dir, sizeof(g_exe_dir), "/profile");
 #else
     GetModuleFileNameA(NULL, g_exe_dir, MAX_PATH);
-    slash = strrchr(g_exe_dir, TT_SEP[0]);
+    char *slash = strrchr(g_exe_dir, TT_SEP[0]);
     if (slash) *slash = 0;
 #endif
     snprintf(g_ini_path, sizeof(g_ini_path), "%s" TT_SEP "twotowers_recomp.ini", g_exe_dir);
@@ -430,6 +429,7 @@ static void twotowers_setup_paths_and_log(void)
     }
     if (GetPrivateProfileIntA("Developer", "profile", 0, g_ini_path) && !getenv("RECOMP_PROFILE"))
         _putenv_s("RECOMP_PROFILE", "all");
+#ifndef __EMSCRIPTEN__
     if (GetPrivateProfileIntA("Developer", "logging", 1, g_ini_path)) {
         char log_path[MAX_PATH];
         FILE *sink;
@@ -483,6 +483,7 @@ static void twotowers_setup_paths_and_log(void)
         }
 #endif
     }
+#endif
     if (tex_dump_on) printf("[TEXDUMP] saving textures to %s\n", getenv("RECOMP_TEX_DUMP"));
 }
 

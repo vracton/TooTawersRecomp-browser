@@ -1386,6 +1386,7 @@ void xbox_OhciInit(void)
     ohci_reset(&s_hc[0], XBOX_OHCI0_BASE, 0);
     ohci_reset(&s_hc[1], XBOX_OHCI1_BASE, 1);
 
+#ifndef __EMSCRIPTEN__
     /* The registers have to fault to be answered. The MCPX aperture is mapped
      * as plain committed memory, so both blocks are made inaccessible here and
      * the title's VEH routes the faults back to xbox_OhciHandleMmio.
@@ -1415,6 +1416,7 @@ void xbox_OhciInit(void)
         }
     }
 
+#endif
     fprintf(stderr, "  OHCI: two controllers at 0x%08X and 0x%08X, "
                     "%d ports each, one device on HC0 port 1\n",
             XBOX_OHCI0_BASE, XBOX_OHCI1_BASE, OHCI_PORTS);
@@ -1445,6 +1447,21 @@ int xbox_OhciOwnsAddress(uint32_t xbox_va)
 {
     return hc_for(xbox_va) != NULL;
 }
+
+#ifdef __EMSCRIPTEN__
+uint32_t xbox_OhciRead(uint32_t va, unsigned width)
+{
+    OhciController *hc = hc_for(va);
+    return hc ? (uint32_t)ohci_read(hc, va - hc->base, width) : 0;
+}
+
+void xbox_OhciWrite(uint32_t va, uint32_t value, unsigned width)
+{
+    OhciController *hc = hc_for(va);
+    if (hc)
+        ohci_write(hc, va - hc->base, value, width);
+}
+#endif
 
 int xbox_OhciHandleMmio(void *ctx, uint32_t xbox_va)
 {

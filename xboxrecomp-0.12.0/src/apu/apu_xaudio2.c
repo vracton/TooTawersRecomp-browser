@@ -276,6 +276,48 @@ int xa2_get_buffer_size(void)
     return XA2_BUF_SAMPLES;
 }
 
+#elif defined(__EMSCRIPTEN__)
+
+#include <emscripten/emscripten.h>
+
+int xa2_init(void)
+{
+    return xa2_is_active();
+}
+
+void xa2_shutdown(void)
+{
+    MAIN_THREAD_EM_ASM({ globalThis.twoTowersAudioOutput?.clear(); });
+}
+
+int xa2_is_active(void)
+{
+    return MAIN_THREAD_EM_ASM_INT({ return !!globalThis.twoTowersAudioOutput; });
+}
+
+int xa2_submit_samples(const int16_t *samples, int num_samples)
+{
+    if (num_samples <= 0)
+        return 0;
+    if (num_samples > xa2_get_buffer_size())
+        num_samples = xa2_get_buffer_size();
+    return MAIN_THREAD_EM_ASM_INT({
+        return globalThis.twoTowersAudioOutput?.submit(HEAP16, $0, $1) ?? 0;
+    }, samples, num_samples);
+}
+
+int xa2_queued_periods(void)
+{
+    return MAIN_THREAD_EM_ASM_INT({
+        return globalThis.twoTowersAudioOutput?.queuedPeriods() ?? -1;
+    });
+}
+
+int xa2_get_buffer_size(void)
+{
+    return 1024;
+}
+
 #else /* !_WIN32 -- SDL2 audio output */
 
 /* The same contract as the XAudio2 path above: 48 kHz stereo 16-bit, pushed

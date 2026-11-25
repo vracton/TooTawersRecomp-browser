@@ -34,10 +34,21 @@ function snapshot(fs, directory) {
             continue;
         }
         const path = `${directory}/${name}`;
-        if ((fs.stat(path).mode & 0o170000) === 0o040000) {
+        const stat = fs.stat(path);
+        const type = stat.mode & 0o170000;
+        if (type === 0o040000) {
             files.push(...snapshot(fs, path));
-        } else {
-            files.push([path, fs.readFile(path)]);
+        } else if (type === 0o100000) {
+            const stream = fs.open(path, "r");
+            try {
+                const data = new Uint8Array(stat.size);
+                const length = data.length ? fs.read(stream, data, 0, data.length) : 0;
+                files.push([path, data.subarray(0, length)]);
+            } catch (error) {
+                throw new Error(`Cannot read ${path} (errno ${error.errno ?? "unknown"})`, { cause: error });
+            } finally {
+                fs.close(stream);
+            }
         }
     }
     return files.sort(([a], [b]) => a.localeCompare(b));

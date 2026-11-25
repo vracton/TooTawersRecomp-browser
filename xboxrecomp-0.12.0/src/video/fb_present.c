@@ -15,6 +15,7 @@
  * Off unless RECOMP_FB_WINDOW is set.
  */
 #include <stdint.h>
+#include "../kernel/xbox_memory_layout.h"
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -150,7 +151,7 @@ void xbox_FramebufferWindowPresent(uint32_t fb_va, uint32_t pitch)
             return;
     }
     bpp = pitch / s_fb_width;
-    src = (const uint8_t *)((uintptr_t)fb_va + xbox_GetMemoryOffset());
+    src = (const uint8_t *)xbox_GuestAddress(fb_va);
     for (y = 0; y < s_fb_height; y++) {
         const uint8_t *row = src + (size_t)y * pitch;
         uint32_t *dst = s_present[next] + (size_t)y * s_fb_width;
@@ -787,7 +788,7 @@ static DWORD WINAPI fb_thread(LPVOID unused)
             /* No flip yet, or pinned with RECOMP_FB_VA: read guest memory as
              * before, which is also what a title that never flips needs. */
             const uint8_t *src =
-                (const uint8_t *)((uintptr_t)s_fb_va + xbox_GetMemoryOffset());
+                (const uint8_t *)xbox_GuestAddress(s_fb_va);
             fb_convert(src, s_fb_pitch / s_fb_width);
             { RECT cr; GetClientRect(hwnd, &cr);
             StretchDIBits(hdc, 0, 0, (int)cr.right, (int)cr.bottom,
@@ -859,6 +860,9 @@ volatile int xbox_hud_hidden;   /* (1.9.7) F1 (Windows only for now) */
 #include <unistd.h>
 #include <SDL.h>
 #include "platform/xbox_winnt.h"
+#ifdef __EMSCRIPTEN__
+#include <emscripten/emscripten.h>
+#endif
 
 extern ptrdiff_t xbox_GetMemoryOffset(void);
 
@@ -955,7 +959,7 @@ void xbox_FramebufferWindowPresent(uint32_t fb_va, uint32_t pitch)
         s_present[next] = (uint32_t *)calloc((size_t)s_fb_width * s_fb_height, 4);
         if (!s_present[next]) return;
     }
-    fb_convert_to(s_present[next], (const uint8_t *)((uintptr_t)fb_va + xbox_GetMemoryOffset()), pitch);
+    fb_convert_to(s_present[next], (const uint8_t *)xbox_GuestAddress(fb_va), pitch);
     if (g_xbox_gamma_set) {
         size_t i, n = (size_t)s_fb_width * s_fb_height;
         uint32_t *d = s_present[next];
@@ -967,10 +971,59 @@ void xbox_FramebufferWindowPresent(uint32_t fb_va, uint32_t pitch)
         }
     }
     InterlockedExchange(&s_present_idx, next);
+#ifdef __EMSCRIPTEN__
+    MAIN_THREAD_EM_ASM({
+        globalThis.twoTowersPresent?.($0, $1, $2, HEAPU32);
+    }, s_present[next], s_fb_width, s_fb_height);
+#endif
 }
 
 /* Keys held, by Windows virtual-key code (see fb_present's Windows half). */
 static volatile unsigned char s_key_down[256];
+
+#ifdef __EMSCRIPTEN__
+EMSCRIPTEN_KEEPALIVE void xbox_WebKey(int key, int down)
+{
+    if ((unsigned)key < sizeof(s_key_down))
+        s_key_down[key] = down != 0;
+}
+
+EMSCRIPTEN_KEEPALIVE void xbox_WebFocus(int focused)
+{
+    s_focus = focused;
+    if (!focused) {
+        for (unsigned key = 0; key < sizeof(s_key_down); ++key)
+            s_key_down[key] = 0;
+        s_mouse_in = 0;
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE void xbox_WebMouse(int x, int y, int dx, int dy, int inside)
+{
+    s_win_w = (int)s_fb_width;
+    s_win_h = (int)s_fb_height;
+    s_mouse_x = x;
+    s_mouse_y = y;
+    s_mouse_in = inside;
+    InterlockedExchangeAdd((volatile LONG *)&s_rel_dx, dx);
+    InterlockedExchangeAdd((volatile LONG *)&s_rel_dy, dy);
+}
+
+EMSCRIPTEN_KEEPALIVE void xbox_WebMouseButton(int button, int down)
+{
+    static const int keys[] = {VK_LBUTTON, VK_MBUTTON, VK_RBUTTON, VK_XBUTTON1, VK_XBUTTON2};
+    if ((unsigned)button >= sizeof(keys) / sizeof(keys[0]))
+        return;
+    xbox_WebKey(keys[button], down);
+    if (down && (button == 0 || button == 2))
+        InterlockedIncrement(&xbox_fb_clicks[button / 2]);
+}
+
+EMSCRIPTEN_KEEPALIVE void xbox_WebWheel(int steps)
+{
+    InterlockedExchangeAdd(&xbox_fb_wheel, steps);
+}
+#endif
 /* (2.1, testing) RECOMP_KEY_SCRIPT=file: lines "ms vk held_ms" (vk in hex) -- that key down for that long, ms after the first key read */
 static volatile DWORD s_ks_t0;
 void xbox_KeyScriptArm(void) { if (getenv("RECOMP_KEY_SCRIPT_ARM") && !s_ks_t0) s_ks_t0 = GetTickCount(); }   /* (testing: times from the game's mark) */
@@ -1356,7 +1409,7 @@ sdl_failed:
             if (idx >= 0 && s_present[idx] && s_rgb)
                 memcpy(s_rgb, s_present[idx], (size_t)s_fb_width * s_fb_height * 4);
             else if (s_rgb && s_fb_va && s_fb_pitch)
-                fb_convert_to(s_rgb, (const uint8_t *)((uintptr_t)s_fb_va + xbox_GetMemoryOffset()), s_fb_pitch);
+                fb_convert_to(s_rgb, (const uint8_t *)xbox_GuestAddress(s_fb_va), s_fb_pitch);
             if (s_gl_state < 0 || getenv("RECOMP_FB_CPU_SHOW")) {
                 if (!ren) {
                     ren = SDL_CreateRenderer(s_win, -1, 0);
@@ -1404,6 +1457,11 @@ sdl_failed:
 
 void xbox_FramebufferWindowStart(void)
 {
+#ifdef __EMSCRIPTEN__
+    InterlockedExchange(&s_gl_state, -1);
+    if (getenv("RECOMP_FB_WINDOW"))
+        InterlockedExchange(&s_fb_running, 1);
+#else
     HANDLE th;
     if (!getenv("RECOMP_FB_WINDOW")) {
         InterlockedExchange(&s_gl_state, -1);
@@ -1413,5 +1471,6 @@ void xbox_FramebufferWindowStart(void)
     th = CreateThread(NULL, 0, fb_thread, NULL, 0, NULL);
     if (th) CloseHandle(th);
     else { InterlockedExchange(&s_fb_running, 0); InterlockedExchange(&s_gl_state, -1); }
+#endif
 }
 #endif

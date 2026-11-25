@@ -36,6 +36,10 @@ void xbox_OhciInit(void);
 
 /* 1 if the address is inside a controller this model owns. */
 int  xbox_OhciOwnsAddress(uint32_t xbox_va);
+#ifdef __EMSCRIPTEN__
+uint32_t xbox_OhciRead(uint32_t va, unsigned width);
+void xbox_OhciWrite(uint32_t va, uint32_t value, unsigned width);
+#endif
 
 /* Service a trapped access. Returns 1 if the faulting instruction was decoded
  * and stepped over. `ctx` is a PCONTEXT; void * keeps windows.h out of here. */

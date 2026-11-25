@@ -418,6 +418,37 @@ static inline uintptr_t recomp_guest_pointer(uint32_t va)
     return xbox_WebGuestAddress(va);
 }
 #define XBOX_PTR(addr) recomp_guest_pointer((uint32_t)(addr))
+
+extern uint32_t xbox_WebReadRegister(uint32_t va, unsigned width);
+extern void xbox_WebWriteRegister(uint32_t va, uint32_t value, unsigned width);
+
+#define RECOMP_WEB_MEMORY(bits, type)                                         \
+    static inline type recomp_web_read##bits(uint32_t va)                     \
+    {                                                                        \
+        if (va >= 0xFE800000u && va < 0xFEF00000u)                            \
+            return (type)xbox_WebReadRegister(va, sizeof(type));              \
+        return *(volatile type *)recomp_guest_pointer(va);                    \
+    }                                                                        \
+    static inline type recomp_web_write##bits(uint32_t va, type value)        \
+    {                                                                        \
+        if (va >= 0xFE800000u && va < 0xFEF00000u)                            \
+            xbox_WebWriteRegister(va, value, sizeof(type));                   \
+        else                                                                 \
+            *(volatile type *)recomp_guest_pointer(va) = value;              \
+        return value;                                                        \
+    }
+
+RECOMP_WEB_MEMORY(8, uint8_t)
+RECOMP_WEB_MEMORY(16, uint16_t)
+RECOMP_WEB_MEMORY(32, uint32_t)
+#undef RECOMP_WEB_MEMORY
+
+#define RECOMP_WEB_UPDATE(bits, address, op, value)                           \
+    ({                                                                       \
+        uint32_t recomp_address = (address);                                  \
+        recomp_web_write##bits(recomp_address,                               \
+            recomp_web_read##bits(recomp_address) op (value));               \
+    })
 #else
 #define XBOX_PTR(addr) ((uintptr_t)(uint32_t)(addr) + g_xbox_mem_offset)
 #endif

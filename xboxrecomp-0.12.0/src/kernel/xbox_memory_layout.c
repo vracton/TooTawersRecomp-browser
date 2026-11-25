@@ -18,6 +18,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <setjmp.h>
+#ifdef __EMSCRIPTEN__
+#include "../apu/apu.h"
+#include "../usb/ohci.h"
+#endif
 #if !defined(_WIN32)
 #include <unistd.h>   /* _exit */
 #include <time.h>   /* nanosleep */
@@ -1806,6 +1810,39 @@ uintptr_t xbox_WebGuestAddress(uint32_t va)
     abort();
 }
 
+uint32_t xbox_WebReadRegister(uint32_t va, unsigned width)
+{
+    if (va - XBOX_MCPX_BASE < 0x80000u) {
+        extern MCPXAPUState *g_apu_state;
+        return g_apu_state ? (uint32_t)mcpx_apu_mmio_read(g_apu_state, va - XBOX_MCPX_BASE, width) : 0;
+    }
+    if (xbox_OhciOwnsAddress(va))
+        return xbox_OhciRead(va, width);
+
+    uint32_t value = 0;
+    memcpy(&value, (const void *)xbox_WebGuestAddress(va), width);
+    return value;
+}
+
+void xbox_WebWriteRegister(uint32_t va, uint32_t value, unsigned width)
+{
+    if (va - XBOX_MCPX_BASE < 0x80000u) {
+        extern MCPXAPUState *g_apu_state;
+        if (g_apu_state)
+            mcpx_apu_mmio_write(g_apu_state, va - XBOX_MCPX_BASE, value, width);
+        return;
+    }
+    if (xbox_OhciOwnsAddress(va)) {
+        xbox_OhciWrite(va, value, width);
+        return;
+    }
+
+    void *address = (void *)xbox_WebGuestAddress(va);
+    memcpy(address, &value, width);
+    if ((uintptr_t)address - (uintptr_t)g_ac97_page < AC97_TRAP_BYTES)
+        ac97_clear_reset_bits();
+}
+
 static void free_web_memory(void)
 {
     free(g_memory_base);
@@ -2388,7 +2425,8 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
 
 #ifdef __EMSCRIPTEN__
     if (getenv("RECOMP_AC97_READY")) {
-        *(volatile uint32_t *)((char *)g_mcpx_memory + 0x00400130u) |= 0x100u;
+        g_ac97_page = (char *)g_mcpx_memory + AC97_NABM_OFFSET;
+        *(volatile uint32_t *)((char *)g_ac97_page + 0x130u) |= 0x100u;
     }
 #else
     /*
