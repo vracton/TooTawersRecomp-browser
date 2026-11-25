@@ -1025,7 +1025,16 @@ int xbox_FrameUsedTexture(uint32_t hash)
     return 0;
 }
 #define GTEX_MAX 512
+#define GTEX_RECENT 128
 static GTex g_tex[GTEX_MAX];
+static GTex *g_recent_tex[GTEX_RECENT];
+
+static int gtex_matches(const GTex *entry, const Texture *texture)
+{
+    return entry && entry->tex && entry->off == texture->offset &&
+           entry->color == texture->color && entry->w == texture->width &&
+           entry->h == texture->height && entry->pitch == texture->pitch;
+}
 
 /* Ultra textures (nv2a_ultra.inc): the pack's pictures as BC7 (BPTC)
  * textures, all their levels -- where the driver has BPTC (GL 4.2, or
@@ -1091,10 +1100,13 @@ static GLuint gtex_get(const Texture *t)
         GLuint hd = ultra_gpu_get(s_texc_last_uidx);
         if (hd) { s_ultra_used = 1; return hd; }
     }
-    for (i = 0; i < GTEX_MAX; i++) {
+    uint32_t key = (t->offset >> 7) ^ (t->offset >> 15) ^ t->color ^ t->pitch;
+    uint32_t recent = key & (GTEX_RECENT - 1);
+    if (gtex_matches(g_recent_tex[recent], t))
+        e = g_recent_tex[recent];
+    for (i = 0; !e && i < GTEX_MAX; i++) {
         GTex *c = &g_tex[i];
-        if (c->tex && c->off == t->offset && c->color == t->color && c->w == t->width && c->h == t->height
-            && c->pitch == t->pitch) { e = c; break; }
+        if (gtex_matches(c, t)) { e = c; break; }
         if (!victim || (!c->tex && victim->tex) || (c->tex && victim->tex && c->used < victim->used)) victim = c;
     }
     if (!e) {
@@ -1135,6 +1147,7 @@ static GLuint gtex_get(const Texture *t)
         g_sh.tex_ok = 0;
     }
     e->used = ++g_clock;
+    g_recent_tex[recent] = e;
     return e->tex;
 }
 
@@ -2527,6 +2540,26 @@ static HwVp *hwvp_lookup(void)
 static void hwvp_pack_range(const HwVp *e, uint32_t lo, uint32_t hi)
 {
     uint32_t k, i;
+    if (!s_gpu.inline_active) {
+        const VertexAttr *attributes[16];
+        const uint8_t *bases[16];
+        for (i = 0; i < e->nin; i++) {
+            const VertexAttr *attr = &s_gpu.attr[e->inreg[i]];
+            attributes[i] = attr;
+            bases[i] = attr->size && attr->stride && attr->offset ?
+                       (const uint8_t *)xbox_GuestAddress(attr->offset) : NULL;
+        }
+        for (k = lo; k < hi; k++) {
+            float *dest = g_xin + (size_t)k * 4 * e->nin;
+            uint32_t index = g_vidx[k];
+            for (i = 0; i < e->nin; i++) {
+                const VertexAttr *attr = attributes[i];
+                const uint8_t *source = bases[i] ? bases[i] + (size_t)index * attr->stride : NULL;
+                decode_attr(attr, source, dest + 4 * i);
+            }
+        }
+        return;
+    }
     for (k = lo; k < hi; k++) {
         float *d = g_xin + (size_t)k * 4 * e->nin;
         for (i = 0; i < e->nin; i++) fetch_attr_any(e->inreg[i], g_vidx[k], d + 4 * i);
@@ -3019,6 +3052,75 @@ static int shadow_hook_gl(void)
 /* ---------------- batches ---------------- */
 static unsigned g_gl_frames;   /* (research) frames presented */
 
+#ifdef __EMSCRIPTEN__
+static int gpu_web_raw_vertices(const HwVp *hv, uint32_t nverts)
+{
+    static int allowed = -1;
+    if (allowed < 0)
+        allowed = getenv("RECOMP_VPCDUMP") == NULL;
+    if (!allowed || s_gpu.inline_active || !nverts)
+        return 0;
+
+    uint32_t base = UINT32_MAX, stride = 0, end = 0;
+    const VertexAttr *attributes[16];
+    for (uint32_t i = 0; i < hv->nin; i++) {
+        const VertexAttr *attr = &s_gpu.attr[hv->inreg[i]];
+        attributes[i] = attr;
+        if (!attr->offset || !attr->size || attr->size > 4 || !attr->stride ||
+            (attr->type != 2 && attr->type != 4) || (stride && attr->stride != stride))
+            return 0;
+        stride = attr->stride;
+        if (attr->offset < base)
+            base = attr->offset;
+    }
+    if (((base | stride) & 3u) || stride > 255)
+        return 0;
+    for (uint32_t i = 0; i < hv->nin; i++) {
+        const VertexAttr *attr = attributes[i];
+        uint32_t offset = attr->offset - base;
+        if (offset >= stride || (attr->type == 2 && (offset & 3u)))
+            return 0;
+        uint32_t limit = offset + attr->size * (attr->type == 2 ? 4u : 1u);
+        if (limit > stride)
+            return 0;
+        if (limit > end)
+            end = limit;
+    }
+
+    uint32_t first = g_vidx[0], last = first;
+    for (uint32_t i = 1; i < nverts; i++) {
+        uint32_t index = g_vidx[i];
+        if (index < first)
+            first = index;
+        if (index > last)
+            last = index;
+    }
+    uint64_t bytes = (uint64_t)(last - first) * stride + end;
+    uint64_t start = base + (uint64_t)first * stride;
+    if (bytes > (uint64_t)nverts * 16 * hv->nin || start + bytes - 1 > UINT32_MAX)
+        return 0;
+
+    const uint8_t *source = (const uint8_t *)xbox_GuestAddress(base) + (size_t)first * stride;
+    uint32_t offset = gpu_ring(&g_rvbx, source, (uint32_t)bytes, 4);
+    if (offset == UINT32_MAX)
+        return 0;
+    for (uint32_t i = 0; i < hv->nin; i++) {
+        const VertexAttr *attr = attributes[i];
+        if (i >= g_hw_attribs)
+            glEnableVertexAttribArray(i);
+        GLenum type = attr->type == 2 ? GL_FLOAT : GL_UNSIGNED_BYTE;
+        glVertexAttribPointer(i, attr->size, type, type == GL_UNSIGNED_BYTE, (GLsizei)stride,
+                              (const void *)(uintptr_t)(offset + (attr->offset - base)));
+    }
+    for (uint32_t i = hv->nin; i < g_hw_attribs; i++)
+        glDisableVertexAttribArray(i);
+    g_hw_attribs = hv->nin;
+    for (uint32_t i = 0; i < g_nidx; i++)
+        g_idx[i] = g_vidx[g_idx[i]] - first;
+    return 1;
+}
+#endif
+
 /* Draw the assembled batch with the program's GPU vertex shader; 0 when its
  * program is not linked yet (the caller draws it on the CPU path). */
 
@@ -3041,6 +3143,17 @@ static int gpu_batch_hw(HwVp *hv, uint32_t nverts)
 #endif
     if (!prog) return 0;
     if (hv->nin) {
+        glBindVertexArray(g_vao_x);
+        g_sh.vao = 2;
+#ifdef __EMSCRIPTEN__
+        if (web_profile_enabled)
+            ++web_vertex_draws;
+        if (gpu_web_raw_vertices(hv, nverts)) {
+            if (web_profile_enabled)
+                ++web_raw_vertex_draws;
+            goto vertices_ready;
+        }
+#endif
         size_t need = (size_t)nverts * 4 * hv->nin;
         if (need > g_xin_cap) {
             float *n = (float *)realloc(g_xin, need * sizeof(float) * 2);
@@ -3061,8 +3174,6 @@ static int gpu_batch_hw(HwVp *hv, uint32_t nverts)
                 fprintf(stderr, "[VPC] draw %d nverts %u nin %u hash %08X in0 %.3f %.3f %.3f %.3f\n", nd, nverts, hv->nin, (unsigned)hv->hash, g_xin[0], g_xin[1], g_xin[2], g_xin[3]);
                 for (q = 0; q < 16; q++) fprintf(stderr, "[VPC]   c%d %.4f %.4f %.4f %.4f\n", q, s_3d.c[q][0], s_3d.c[q][1], s_3d.c[q][2], s_3d.c[q][3]); } }
         }
-        glBindVertexArray(g_vao_x);
-        g_sh.vao = 2;
         vb_at = gpu_ring(&g_rvbx, g_xin, (uint32_t)(need * sizeof(float)), stride);
         if (vb_at == 0xFFFFFFFFu) return 1;
         for (k = 0; k < hv->nin; k++) {
@@ -3078,6 +3189,9 @@ static int gpu_batch_hw(HwVp *hv, uint32_t nverts)
         glBindVertexArray(g_vao_empty);
         g_sh.vao = 3;
     }
+#ifdef __EMSCRIPTEN__
+vertices_ready:
+#endif
     ib_at = gpu_ring(&g_rib, g_idx, g_nidx * 4, 4);
     if (ib_at == 0xFFFFFFFFu) return 1;
     if (!g_vpc_ok || memcmp(g_vpc_shadow, s_3d.c, sizeof g_vpc_shadow)) {

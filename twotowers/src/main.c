@@ -1419,8 +1419,12 @@ int main(int argc, char **argv)
     setenv("RECOMP_ASPECT", "1.3333", 1);
     setenv("RECOMP_RENDER_SCALE", "1", 1);
     setenv("TT_FPS", "30", 1);
-    if (argc > 1 && strcmp(argv[1], "--profile-webgl") == 0)
-        setenv("RECOMP_WEB_PROFILE", "1", 1);
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--profile-webgl") == 0)
+            setenv("RECOMP_WEB_PROFILE", "1", 1);
+        else if (strcmp(argv[i], "--fps=60") == 0 || strcmp(argv[i], "--fps=120") == 0)
+            setenv("TT_FPS", argv[i] + 6, 1);
+    }
     return WinMain(NULL, NULL, (LPSTR)"", 0);
 #else
     env0_save();

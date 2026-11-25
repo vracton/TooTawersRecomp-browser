@@ -236,8 +236,16 @@ play.addEventListener("click", async () => {
         connectProfiler(connectCanvas(game));
         connectInput(game);
         canvas.focus();
-        const profile = new URLSearchParams(location.search).has("profile");
-        game.callMain(profile ? ["--profile-webgl"] : []);
+        const query = new URLSearchParams(location.search);
+        const args = [];
+        if (query.has("profile")) {
+            args.push("--profile-webgl");
+        }
+        const fps = query.get("fps");
+        if (fps === "60" || fps === "120") {
+            args.push(`--fps=${fps}`);
+        }
+        game.callMain(args);
     } catch (error) {
         showStatus(error.message);
     }

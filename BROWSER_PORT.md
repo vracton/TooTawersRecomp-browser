@@ -142,3 +142,40 @@ These are estimates from timed screenshots and audio correlation. Capture
 latency limits the precision. Local comparisons are `build-web/climb-av-before.log`
 and `build-web/climb-av-after.log`. Long movies under load and later chapters
 still need the same check.
+
+In the subsequent 120 FPS headroom run, `logos.bik` finished in 18.08 seconds
+against its encoded 18.02 seconds. A 22-second `mont.bik` sample averaged
+29.94 FPS with 52.5 ms p95 and zero new audio underruns. This measures pace
+and output starvation for the story movie. The track correlation above
+covers the startup movie.
+
+### Live combat headroom
+
+`/?fps=60` and `/?fps=120` select the corresponding existing guest pacing
+modes for testing. Either option can be combined with `profile`. With no
+query parameter, launch still targets stock 30 FPS gameplay. The movie
+clock uses the encoded rate in every mode.
+
+The OpenGL renderer now resolves guest vertex bases once per packed draw.
+On WebGL 2, supported interleaved float and normalized-byte layouts can be
+uploaded directly with rebased indices. Other layouts retain the previous
+conversion path. An indexed recent-texture lookup avoids a linear scan on
+repeated hits and validates the full texture key before using an entry.
+
+In the opening battle with `/?profile&fps=60`, about half of hardware draws
+in the heavy samples used the direct vertex path. CPU vertex packing in
+those samples was around 2 ms per frame. The run still averaged 19.8 FPS
+over the final 300 frames. The renderer and game thread both took more
+than the 16.7 ms budget in heavier combat. This measurement was made before
+adding the recent-texture lookup and the movie clock change. Local results
+are in `build-web/climb-raw-play.log`.
+
+With the recent-texture lookup and movie clock in place, the 120 FPS cap
+run averaged 22.2 FPS over its final 300 battle frames with 69.6 ms p95 and
+442.5 MiB of Wasm linear memory. Near the end, vertex packing was about
+1.1–1.4 ms at roughly 900–1,050 draws per frame. The render thread still
+took about 21–25 ms per frame and the game thread spent about 26–41 ms in
+game code. The simulation clock kept pace with wall time in the sampled
+segment. The current bottlenecks span both threads. The cap runs cover
+slightly different combat states, so the difference in overall FPS is not
+an isolated estimate of the renderer changes. See `build-web/climb-paced-play.log`.

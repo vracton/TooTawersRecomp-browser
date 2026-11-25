@@ -8,6 +8,7 @@ static int web_pack_stride;
 static uint32_t *web_pixels;
 static size_t web_pixel_capacity;
 static int web_profile_enabled;
+static unsigned web_vertex_draws, web_raw_vertex_draws;
 enum WebProfilePhase {
     WEB_PROFILE_STATE_TEXTURE,
     WEB_PROFILE_SHADER,
@@ -45,12 +46,15 @@ static void web_profile_present(void)
     if (now - last < 1000)
         return;
     fprintf(stderr, "  [WEBGL PERF] frame ms  state/texture %.2f  shader %.2f  buffer upload %.2f  draw %.2f"
-            "  vertex pack %.2f  buffer allocation %.2f  present %.2f  batches %.2f (%u frames)\n",
+            "  vertex pack %.2f  buffer allocation %.2f  present %.2f  batches %.2f (%u frames)"
+            "  raw vertex draws %u/%u\n",
             web_profile_time[WEB_PROFILE_STATE_TEXTURE] / frames, web_profile_time[WEB_PROFILE_SHADER] / frames,
             web_profile_time[WEB_PROFILE_UPLOAD] / frames, web_profile_time[WEB_PROFILE_DRAW] / frames,
             web_profile_time[WEB_PROFILE_VERTEX_PACK] / frames, web_profile_time[WEB_PROFILE_ALLOCATION] / frames,
-            web_profile_time[WEB_PROFILE_PRESENT] / frames, web_profile_time[WEB_PROFILE_BATCH] / frames, frames);
+            web_profile_time[WEB_PROFILE_PRESENT] / frames, web_profile_time[WEB_PROFILE_BATCH] / frames, frames,
+            web_raw_vertex_draws, web_vertex_draws);
     memset(web_profile_time, 0, sizeof(web_profile_time));
+    web_raw_vertex_draws = web_vertex_draws = 0;
     frames = 0;
     last = now;
 }

@@ -427,29 +427,14 @@ static void note_unhandled(uint32_t method, uint32_t param)
 /* Read attribute `a` of vertex `index` as floats. Only the float and the
  * normalised-byte types appear in practice; anything else returns 0 so a
  * caller sees a degenerate vertex rather than reading past the array. */
-static int fetch_attr(const VertexAttr *a, uint32_t index, float out[4])
+static int decode_attr(const VertexAttr *a, const uint8_t *p, float out[4])
 {
-    const uint8_t *p;
     uint32_t i;
 
     out[0] = out[1] = out[2] = 0.0f;
     out[3] = 1.0f;
-    if (!a->size || !a->stride)
+    if (!p)
         return 0;
-    if (s_gpu.inline_active) {
-        /* The batch arrived as INLINE_ARRAY, so `offset` is a byte offset into
-         * the buffered payload rather than a guest address -- and 0 is a legal
-         * one there, which is why the offset test is on the other side of this
-         * branch. */
-        size_t at = (size_t)a->offset + (size_t)index * a->stride;
-        if (at + 4 > (size_t)s_gpu.inline_count * 4)
-            return 0;
-        p = (const uint8_t *)s_gpu.inline_buf + at;
-    } else {
-        if (!a->offset)
-            return 0;
-        p = (const uint8_t *)xbox_GuestAddress(a->offset) + (size_t)index * a->stride;
-    }
 
     switch (a->type) {
     case 0:                                  /* D3DCOLOR */
@@ -486,6 +471,22 @@ static int fetch_attr(const VertexAttr *a, uint32_t index, float out[4])
     default:
         return 0;
     }
+}
+
+static int fetch_attr(const VertexAttr *a, uint32_t index, float out[4])
+{
+    const uint8_t *p = NULL;
+    if (a->size && a->stride) {
+        size_t at = (size_t)index * a->stride;
+        if (s_gpu.inline_active) {
+            at += a->offset;
+            if (at + 4 <= (size_t)s_gpu.inline_count * 4)
+                p = (const uint8_t *)s_gpu.inline_buf + at;
+        } else if (a->offset) {
+            p = (const uint8_t *)xbox_GuestAddress(a->offset) + at;
+        }
+    }
+    return decode_attr(a, p, out);
 }
 
 static uint32_t surface_bpp(void)
