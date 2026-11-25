@@ -7,6 +7,54 @@ static int web_unpack_stride;
 static int web_pack_stride;
 static uint32_t *web_pixels;
 static size_t web_pixel_capacity;
+static int web_profile_enabled;
+enum WebProfilePhase {
+    WEB_PROFILE_STATE_TEXTURE,
+    WEB_PROFILE_SHADER,
+    WEB_PROFILE_UPLOAD,
+    WEB_PROFILE_DRAW,
+    WEB_PROFILE_VERTEX_PACK,
+    WEB_PROFILE_ALLOCATION,
+    WEB_PROFILE_PRESENT,
+    WEB_PROFILE_BATCH,
+    WEB_PROFILE_COUNT,
+};
+static double web_profile_time[WEB_PROFILE_COUNT];
+
+static double web_profile_begin(void)
+{
+    return web_profile_enabled ? emscripten_get_now() : 0;
+}
+
+static void web_profile_add(enum WebProfilePhase phase, double start)
+{
+    if (start)
+        web_profile_time[phase] += emscripten_get_now() - start;
+}
+
+static void web_profile_present(void)
+{
+    static unsigned frames;
+    static double last;
+    if (!web_profile_enabled)
+        return;
+    double now = emscripten_get_now();
+    if (!last)
+        last = now;
+    ++frames;
+    if (now - last < 1000)
+        return;
+    fprintf(stderr, "  [WEBGL PERF] frame ms  state/texture %.2f  shader %.2f  buffer upload %.2f  draw %.2f"
+            "  vertex pack %.2f  buffer allocation %.2f  present %.2f  batches %.2f (%u frames)\n",
+            web_profile_time[WEB_PROFILE_STATE_TEXTURE] / frames, web_profile_time[WEB_PROFILE_SHADER] / frames,
+            web_profile_time[WEB_PROFILE_UPLOAD] / frames, web_profile_time[WEB_PROFILE_DRAW] / frames,
+            web_profile_time[WEB_PROFILE_VERTEX_PACK] / frames, web_profile_time[WEB_PROFILE_ALLOCATION] / frames,
+            web_profile_time[WEB_PROFILE_PRESENT] / frames, web_profile_time[WEB_PROFILE_BATCH] / frames, frames);
+    memset(web_profile_time, 0, sizeof(web_profile_time));
+    frames = 0;
+    last = now;
+}
+
 static void (APIENTRY *web_clear_depthf)(GLfloat);
 static void (APIENTRY *web_draw_buffers)(GLsizei, const GLenum *);
 static void (APIENTRY *web_draw_elements)(GLenum, GLsizei, GLenum, const void *);
@@ -108,13 +156,17 @@ static void APIENTRY web_clear_depth(GLdouble depth)
 static void APIENTRY web_draw_base(GLenum mode, GLsizei count, GLenum type,
     const void *indices, GLint base)
 {
-    if (base == 0)
+    if (base == 0) {
+        double start = web_profile_begin();
         web_draw_elements(mode, count, type, indices);
+        web_profile_add(WEB_PROFILE_DRAW, start);
+    }
 }
 
 static int web_bind_context(void)
 {
     EmscriptenWebGLContextAttributes attributes;
+    web_profile_enabled = getenv("RECOMP_WEB_PROFILE") != NULL;
     emscripten_webgl_init_context_attributes(&attributes);
     attributes.majorVersion = 2;
     attributes.alpha = EM_FALSE;

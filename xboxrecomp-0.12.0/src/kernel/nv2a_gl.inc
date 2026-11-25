@@ -426,7 +426,13 @@ static int g_rub_fresh;   /* (2.0.0) the uniform ring was given a fresh store: t
 static int g_ringtest = -1;
 static void gpu_ring_fresh(GRing *r)
 {
+#ifdef __EMSCRIPTEN__
+    double start = web_profile_begin();
+#endif
     glBufferData(r->target, r->cap, NULL, GL_STREAM_DRAW);
+#ifdef __EMSCRIPTEN__
+    web_profile_add(WEB_PROFILE_ALLOCATION, start);
+#endif
     if (r == &g_rub) g_rub_fresh = 1;
 #ifndef __EMSCRIPTEN__
     if (g_ringtest > 0) {
@@ -499,7 +505,9 @@ static uint32_t gpu_ring(GRing *r, const void *data, uint32_t bytes, uint32_t al
         at = 0;
     }
 #ifdef __EMSCRIPTEN__
+    double submit_time = web_profile_begin();
     glBufferSubData(r->target, at, bytes, data);
+    web_profile_add(WEB_PROFILE_UPLOAD, submit_time);
 #else
     void *p = glMapBufferRange(r->target, at, bytes, GL_MAP_WRITE_BIT | GL_MAP_UNSYNCHRONIZED_BIT | GL_MAP_INVALIDATE_RANGE_BIT);
     if (!p) return 0xFFFFFFFFu;
@@ -3004,8 +3012,18 @@ static int gpu_batch_hw(HwVp *hv, uint32_t nverts)
     uint32_t stride = 16 * hv->nin, vb_at = 0, ib_at;
     uint32_t k;
     GLuint prog;
+#ifdef __EMSCRIPTEN__
+    double profile_time = web_profile_begin();
+#endif
     gpu_bind_stages();
+#ifdef __EMSCRIPTEN__
+    web_profile_add(WEB_PROFILE_STATE_TEXTURE, profile_time);
+    profile_time = web_profile_begin();
+#endif
     prog = gpu_program_for(hv->vs);
+#ifdef __EMSCRIPTEN__
+    web_profile_add(WEB_PROFILE_SHADER, profile_time);
+#endif
     if (!prog) return 0;
     if (hv->nin) {
         size_t need = (size_t)nverts * 4 * hv->nin;
@@ -3014,7 +3032,13 @@ static int gpu_batch_hw(HwVp *hv, uint32_t nverts)
             if (!n) return 1;
             g_xin = n; g_xin_cap = (uint32_t)(need * 2);
         }
+#ifdef __EMSCRIPTEN__
+        profile_time = web_profile_begin();
+#endif
         hwvp_pack_range(hv, 0, nverts);
+#ifdef __EMSCRIPTEN__
+        web_profile_add(WEB_PROFILE_VERTEX_PACK, profile_time);
+#endif
         {   /* (research, RECOMP_VPCDUMP=frame) a frame's draws: the first vertex's inputs and constants c[0..15] */
             static int fr = -1, nd;
             if (fr < 0) fr = getenv("RECOMP_VPCDUMP") ? atoi(getenv("RECOMP_VPCDUMP")) : 0;
@@ -3056,7 +3080,7 @@ static int gpu_batch_hw(HwVp *hv, uint32_t nverts)
 }
 
 static int g_null3_draw;   /* (RECOMP_GPU_NULL=3) */
-static void gpu_batch(void)
+static void gpu_batch_impl(void)
 {
     {   static int nul = -1;   /* testing: RECOMP_GPU_NULL=1 -- no drawing (CPU profiles of the game); =3: only the frames a picture is asked of */
         if (nul < 0) { const char *e = getenv("RECOMP_GPU_NULL"); nul = !e ? 0 : *e == '3' ? 3 : 1; }
@@ -3191,6 +3215,17 @@ cpu_verts_ready:
     }
     s_gpu.tris_drawn += g_nidx / 3;
     s_gpu.drawn_offset = s_gpu.color_offset;
+}
+
+static void gpu_batch(void)
+{
+#ifdef __EMSCRIPTEN__
+    double start = web_profile_begin();
+#endif
+    gpu_batch_impl();
+#ifdef __EMSCRIPTEN__
+    web_profile_add(WEB_PROFILE_BATCH, start);
+#endif
 }
 
 /* ---------------- clears, copies, read-backs ---------------- */
@@ -3514,6 +3549,9 @@ static void gpu_dump_window(const char *nm)
 /* The flip: the finished surface onto the window. */
 static void gpu_present(uint32_t base, uint32_t pitch)
 {
+#ifdef __EMSCRIPTEN__
+    double start = web_profile_begin();
+#endif
     g_gl_frames++;
     hud_frame_end();   /* this frame's HUD pieces, grouped (hud_wide_x) */
     GSurf *s = gsurf_find(base, 0);
@@ -3635,15 +3673,19 @@ static void gpu_present(uint32_t base, uint32_t pitch)
     if (!web_offscreen)
         emscripten_webgl_commit_frame();
     MAIN_THREAD_ASYNC_EM_ASM({ globalThis.twoTowersGpuPresent?.($0); }, web_offscreen);
+    web_profile_add(WEB_PROFILE_PRESENT, start);
+    web_profile_present();
 #else
     SDL_GL_SwapWindow(g_win);
 #endif
     gpu_sh_reset();
+#ifndef __EMSCRIPTEN__
     {
         static int said;
         GLenum err = glGetError();
         if (err != GL_NO_ERROR && said++ < 10) fprintf(stderr, "  [GL] error 0x%04X during the frame\n", err);
     }
+#endif
 settings:
     if (g_msaa_bad && g_msaa > 1) {
         fprintf(stderr, "  [GL] MSAA: a multisampled surface could not be made (video memory?): MSAA off\n"); fflush(stderr);

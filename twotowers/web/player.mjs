@@ -178,7 +178,8 @@ play.addEventListener("click", async () => {
         connectCanvas(game);
         connectInput(game);
         canvas.focus();
-        game.callMain([]);
+        const profile = new URLSearchParams(location.search).has("profile");
+        game.callMain(profile ? ["--profile-webgl"] : []);
     } catch (error) {
         showStatus(error.message);
     }
