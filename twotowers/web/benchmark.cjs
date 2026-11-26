@@ -1,5 +1,25 @@
 const { chromium } = require("playwright-core");
 
+function trackTransition() {
+    const present = window.twoTowersGpuPresent;
+    let previous;
+    let start;
+    const sample = { durationMs: 10000, firstPresentMs: null, longestGapMs: 0, frames: 0 };
+    window.twoTowersGpuPresent = (...args) => {
+        const now = performance.now();
+        if (start !== undefined) {
+            if (previous !== undefined && previous < start + sample.durationMs)
+                sample.longestGapMs = Math.max(sample.longestGapMs, now - previous);
+            if (sample.firstPresentMs === null) sample.firstPresentMs = now - start;
+            if (now <= start + sample.durationMs) ++sample.frames;
+            else window.twoTowersGpuPresent = present;
+        }
+        previous = now;
+        return present(...args);
+    };
+    return { begin() { start = performance.now(); }, sample };
+}
+
 async function benchmark() {
     const url = process.env.TT_BENCH_URL || "http://127.0.0.1:8080/?fps=60";
     const browser = await chromium.launch({
@@ -14,6 +34,8 @@ async function benchmark() {
         });
         const errors = [];
         const intervals = [];
+        let workersCreated = 0;
+        page.on("worker", () => ++workersCreated);
         let inBattle = false;
         let inStory = false;
         let interval;
@@ -53,13 +75,25 @@ async function benchmark() {
         const story = waitForLog(/\[FILM\] mont,/);
         await press("k");
         await story;
+        const transitionTracker = await page.evaluateHandle(trackTransition);
+        const cdp = await browser.newBrowserCDPSession();
+        const cpuSample = async () => ({
+            processes: (await cdp.send("SystemInfo.getProcessInfo")).processInfo,
+            time: performance.now(),
+        });
         const handoff = waitForLog(/\[FILM\] over after/);
         if (process.argv.includes("--skip-story")) {
             await page.waitForTimeout(4000);
             await press("k");
         }
         await handoff;
-        const usage = () => page.evaluate(() => window.twoTowersUsage());
+        await transitionTracker.evaluate(tracker => tracker.begin());
+        const cpuStart = await cpuSample();
+        const usage = async () => ({
+            ...await page.evaluate(() => window.twoTowersUsage()),
+            workersCreated,
+            liveWorkers: page.workers().length,
+        });
         const movieEnd = await usage();
         await page.waitForTimeout(22000);
         for (let i = 0; i < 14; ++i) {
@@ -69,9 +103,20 @@ async function benchmark() {
         await page.waitForTimeout(10000);
         await press("w", 1000);
         const battle = await usage();
+        const transition = await transitionTracker.evaluate(tracker => tracker.sample);
+        const cpuEnd = await cpuSample();
+        const cpuCores = {};
+        for (const process of cpuEnd.processes) {
+            const before = cpuStart.processes.find(item => item.id === process.id && item.type === process.type);
+            if (!before) continue;
+            const cores = (process.cpuTime - before.cpuTime) * 1000 / (cpuEnd.time - cpuStart.time);
+            cpuCores[process.type] = (cpuCores[process.type] || 0) + cores;
+        }
         if (errors.length || intervals.length < 2 || !intervals.some(item => item.drawsPerFrame > 500))
             throw new Error(`Combat benchmark failed. ${errors.join("\n")}`);
-        console.log(JSON.stringify({ url, movieEnd, battle, intervals }, null, 2));
+        if (process.env.TT_BENCH_CAPTURE)
+            await page.screenshot({ path: process.env.TT_BENCH_CAPTURE });
+        console.log(JSON.stringify({ url, movieEnd, transition, battle, cpuCores, intervals }, null, 2));
     } finally {
         await browser.close();
     }

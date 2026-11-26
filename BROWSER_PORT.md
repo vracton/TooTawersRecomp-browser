@@ -295,3 +295,24 @@ averaged 59.7 FPS with a 31.3 ms p95. Intervals above 1,400 draws ranged
 from 53 to 60 FPS. Enemy count and compilation timing vary between runs.
 See `build-web/combat-O2-natural.json` and
 `build-web/combat-shader-poll-natural.json`.
+
+The Win32 compatibility layer previously created joinable host threads
+and signaled its own completion handles. Nothing joined the pthreads, so
+Emscripten kept their workers and stacks after exit. Host threads now
+start detached. The compatibility handle continues to carry the exit
+code and wait signal independently of the browser worker's lifetime.
+
+In the natural run before this change, Edge had 123 live workers at
+movie end and 142 after combat. With detached threads it had 19 at both
+samples, and the Wasm heap went from 442.5 to 368.75 MiB. The first
+battlefield intervals still recorded three frames in 1.00 seconds and
+five in 1.34 seconds. Combat ended at 59.6 FPS over 300 presents with a
+30.8 ms p95 and 890 cumulative audio underruns. The resource improvement
+reproduced independently of movie timing. See
+`build-web/combat-detached-natural.json`.
+
+The benchmark also reports live and cumulative worker counts, CPU cores
+by browser process type during combat, and the longest gap between
+main-thread GPU present notifications crossing the first ten seconds
+after the movie-end event. `TT_BENCH_CAPTURE` optionally names a PNG to
+save at the final combat sample.

@@ -305,7 +305,6 @@ typedef struct w32_object {
 
     /* thread */
     pthread_t       thread;
-    int             thread_joinable;
     DWORD           tid;
     int             exited;
     DWORD           exit_code;
@@ -841,6 +840,7 @@ static HANDLE create_thread(SIZE_T stackSize, LPTHREAD_START_ROUTINE start,
 
     pthread_attr_t attr;
     pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
     /* Translated code nests deeply on the native stack: the Windows build
      * links with a 64 MB default stack, which every thread created with a
      * size of 0 inherits. Same here (address space only until touched). */
@@ -863,7 +863,6 @@ static HANDLE create_thread(SIZE_T stackSize, LPTHREAD_START_ROUTINE start,
         return NULL;
     }
     pthread_attr_destroy(&attr);
-    o->thread_joinable = 1;
 
     if (threadId) *threadId = o->tid;
     return (HANDLE)o;
@@ -939,8 +938,12 @@ BOOL TerminateThread(HANDLE h, DWORD exitCode)
 {
     w32_object *o = obj_get(h);
     if (!o || o->kind != K_THREAD) return FALSE;
-    pthread_cancel(o->thread);
     pthread_mutex_lock(&o->lock);
+    if (o->exited) {
+        pthread_mutex_unlock(&o->lock);
+        return TRUE;
+    }
+    pthread_cancel(o->thread);
     o->exit_code = exitCode;
     o->exited    = 1;
     o->signaled  = 1;
