@@ -1781,6 +1781,8 @@ volatile uint32_t g_icall_trace_idx = 0;
 volatile uint64_t g_icall_count = 0;
 
 #ifdef __EMSCRIPTEN__
+uintptr_t xbox_web_memory_banks[64];
+
 static int allocate_web_region(void **region, size_t size)
 {
     *region = aligned_alloc(4096, size);
@@ -1792,6 +1794,9 @@ static int allocate_web_region(void **region, size_t size)
 
 uintptr_t xbox_WebGuestAddress(uint32_t va)
 {
+    uintptr_t bank = xbox_web_memory_banks[va >> 26];
+    if (bank)
+        return bank + (va & 0x03FFFFFFu);
     if (va < XBOX_CONTIG_BASE)
         return (uintptr_t)g_memory_base + va % g_memory_size;
     if (va - XBOX_CONTIG_BASE < XBOX_CONTIG_SIZE)
@@ -1845,6 +1850,7 @@ void xbox_WebWriteRegister(uint32_t va, uint32_t value, unsigned width)
 
 static void free_web_memory(void)
 {
+    memset(xbox_web_memory_banks, 0, sizeof xbox_web_memory_banks);
     free(g_memory_base);
     free(g_contig_memory);
     free(g_contig_high);
@@ -1871,6 +1877,17 @@ static int allocate_web_memory(void)
     }
     g_mcpx_regs = g_mcpx_memory;
     g_tiled_view = g_contig_memory;
+    const size_t bank_size = (size_t)1 << 26;
+    for (uint32_t i = 0; i < (XBOX_CONTIG_BASE >> 26); ++i) {
+        size_t offset = (i * bank_size) % g_memory_size;
+        if (g_memory_size - offset >= bank_size)
+            xbox_web_memory_banks[i] = (uintptr_t)g_memory_base + offset;
+    }
+    _Static_assert(XBOX_CONTIG_SIZE == (1u << 26) && XBOX_CONTIG_HIGH_SIZE == (1u << 26),
+                   "Physical banks must cover one 64 MiB segment");
+    xbox_web_memory_banks[XBOX_CONTIG_BASE >> 26] = (uintptr_t)g_contig_memory;
+    xbox_web_memory_banks[XBOX_CONTIG_HIGH_BASE >> 26] = (uintptr_t)g_contig_high;
+    xbox_web_memory_banks[XBOX_TILED_BASE >> 26] = (uintptr_t)g_contig_memory;
     return 1;
 }
 #endif

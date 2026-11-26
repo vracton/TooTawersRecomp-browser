@@ -377,3 +377,22 @@ cores over the transition and combat, down from 3.73. This run ended at
 at 42.9–55.0 FPS, and the final audio underrun count was four. The
 timer change reduced processor demand; this pair of runs did not show
 a frame-rate improvement. See `build-web/combat-clock-natural.json`.
+
+Generated game code now uses Wasm SIMD for its packed vertex and matrix
+operations. Aligned 64 MiB guest address regions have a direct host
+lookup, including the low RAM mirrors and both views of physical RAM.
+Device registers and irregular mappings retain their original handlers.
+Unaligned 16-byte vector accesses wholly within one mapped bank use one
+copy. Cross-bank accesses retain their individual lane translations. A
+Wasm smoke test checked physical/tiled aliases, the split between
+physical banks, unaligned loads and stores, and MMIO dispatch. The new
+Release module is 35.64 MB, up from 25.97 MB.
+
+The natural run in `build-web/combat-bank-natural.json` still used the
+original 60 FPS limiter. At 1,658 draws it averaged 14.8 ms in game
+code, 14.3 ms on the render worker and 6.0 ms waiting for the GPU or
+clock (46.9 FPS). Across all fifteen intervals above 1,400 draws it
+reached 46.9–56.8 FPS. In separate four-second busy-scene CPU profiles,
+the game thread spent 441 ms in the guest address translation function
+before the change and had zero samples there afterward. The two CPU
+profiles used different caps and did not follow identical enemy movement.

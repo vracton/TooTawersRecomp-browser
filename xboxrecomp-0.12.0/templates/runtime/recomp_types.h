@@ -411,11 +411,17 @@ void recomp_trace_esp(const char *name, const char *tag);
  */
 #ifdef __EMSCRIPTEN__
 extern uintptr_t xbox_WebGuestAddress(uint32_t va);
+extern uintptr_t xbox_web_memory_banks[64];
+static inline uintptr_t recomp_web_bank_pointer(uint32_t va)
+{
+    uintptr_t base = xbox_web_memory_banks[va >> 26];
+    return base ? base + (va & 0x03FFFFFFu) : xbox_WebGuestAddress(va);
+}
 static inline uintptr_t recomp_guest_pointer(uint32_t va)
 {
     if (va < 0x04000000u)
         return (uintptr_t)g_xbox_mem_offset + va;
-    return xbox_WebGuestAddress(va);
+    return recomp_web_bank_pointer(va);
 }
 #define XBOX_PTR(addr) recomp_guest_pointer((uint32_t)(addr))
 
@@ -429,7 +435,7 @@ extern void xbox_WebWriteRegister(uint32_t va, uint32_t value, unsigned width);
             return *(volatile type *)((uintptr_t)g_xbox_mem_offset + va);      \
         if (va >= 0xFE800000u && va < 0xFEF00000u)                            \
             return (type)xbox_WebReadRegister(va, sizeof(type));              \
-        return *(volatile type *)xbox_WebGuestAddress(va);                    \
+        return *(volatile type *)recomp_web_bank_pointer(va);                 \
     }                                                                        \
     static inline type recomp_web_write##bits(uint32_t va, type value)        \
     {                                                                        \
@@ -438,7 +444,7 @@ extern void xbox_WebWriteRegister(uint32_t va, uint32_t value, unsigned width);
         else if (va >= 0xFE800000u && va < 0xFEF00000u)                       \
             xbox_WebWriteRegister(va, value, sizeof(type));                   \
         else                                                                 \
-            *(volatile type *)xbox_WebGuestAddress(va) = value;                \
+            *(volatile type *)recomp_web_bank_pointer(va) = value;             \
         return value;                                                        \
     }
 
@@ -545,14 +551,37 @@ static inline void XMM_STORE(uint32_t addr, RecompXmm v) {
     _mm_storeu_ps((float *)XBOX_PTR(addr), xmm_v(v));
 }
 #else
+#if defined(__EMSCRIPTEN__) && defined(__wasm_simd128__) && !defined(RECOMP_XMM_PORTABLE)
+#define RECOMP_XMM_WEB_SIMD 1
+static inline void *recomp_web_xmm_pointer(uint32_t addr)
+{
+    uint32_t offset = addr & 0x03FFFFFFu;
+    uintptr_t base = xbox_web_memory_banks[addr >> 26];
+    return base && offset <= 0x04000000u - sizeof(RecompXmm) ? (void *)(base + offset) : NULL;
+}
+#endif
 static inline RecompXmm XMM_MEM(uint32_t addr) {
     RecompXmm r;
+#ifdef RECOMP_XMM_WEB_SIMD
+    const void *source = recomp_web_xmm_pointer(addr);
+    if (source) {
+        memcpy(&r, source, sizeof r);
+        return r;
+    }
+#endif
     r.u[0] = MEM32(addr);      r.u[1] = MEM32(addr + 4);
     r.u[2] = MEM32(addr + 8);  r.u[3] = MEM32(addr + 12);
     return r;
 }
 
 static inline void XMM_STORE(uint32_t addr, RecompXmm v) {
+#ifdef RECOMP_XMM_WEB_SIMD
+    void *dest = recomp_web_xmm_pointer(addr);
+    if (dest) {
+        memcpy(dest, &v, sizeof v);
+        return;
+    }
+#endif
     MEM32(addr)      = v.u[0]; MEM32(addr + 4)  = v.u[1];
     MEM32(addr + 8)  = v.u[2]; MEM32(addr + 12) = v.u[3];
 }
