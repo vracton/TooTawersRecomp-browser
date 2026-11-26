@@ -432,3 +432,35 @@ and the longest transition gap was 348 ms. A trial that replaced the
 renderer's deadline wait with a single atomic sleep raised the final
 p95 from 34.4 to 46.3 ms and the transition gap to 595 ms. That trial
 was discarded. Both runs kept the simulation at real time.
+
+### Launcher settings and save library
+
+The launcher uses the original Options background and gold selection ring
+from `UI/options.BFF` and bitmap glyphs from `UI/startup.BFF`. The local server decodes these
+from the user's disc in memory. The launcher
+remembers the 30, 60, or Unlocked setting and the profiler switch in
+origin-local storage. The profiler defaults to off. The title uses a
+smoothed enlargement of the same bitmap glyphs. The selection ring keeps
+the same dimensions at every stop. It sits behind the full Unlocked
+label, and the profiler uses the same marker for On and Off.
+The URL can still select diagnostic frame rates.
+The game module and audio start when the user clicks Play.
+
+The save list reads the existing IndexedDB profile and groups campaign
+files by slot under `/profile/saves/UDATA/45410010`. It gets the name and
+timestamp from `SaveMeta.xbx`. A `.ttsave` export includes the original
+slot identifier and companion files. Upload also accepts a raw `.xsv`
+with optional Xbox metadata and image files. It derives a slot identifier
+from the save data when necessary and builds `SaveMeta.xbx` from the
+filename and file date when missing. Imports allocate a fresh slot if the
+preferred ID is already in use, including when the contents match.
+Profile flushes merge filesystem changes
+in a read-write transaction so saving settings in a running tab preserves
+library edits made in another tab.
+
+Edge checks covered 1440×900 and 390×844 layouts, three visible save rows
+before scrolling, and settings across refresh. A Weathertop backup
+round-tripped byte-for-byte. A separate import of its raw `.xsv` with
+regenerated metadata survived reload, appeared in the game's Load Game
+menu and started loading Weathertop. Short presses left saves intact,
+and invalid imports were rejected.

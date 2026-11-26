@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 from generate import XBE_SHA256, find_xbe
+from launcher_assets import load_launcher_art, load_launcher_font, load_launcher_ring
 
 
 ROOT = Path(__file__).resolve().parent
@@ -19,9 +20,10 @@ RANGE = re.compile(r"bytes=(\d*)-(\d*)")
 class GameHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
-    def __init__(self, *args, disc, build, **kwargs):
+    def __init__(self, *args, disc, build, launcher_assets, **kwargs):
         self.disc = disc
         self.build = build
+        self.launcher_assets = launcher_assets
         super().__init__(*args, **kwargs)
 
     def end_headers(self):
@@ -41,6 +43,10 @@ class GameHandler(BaseHTTPRequestHandler):
         route = unquote(urlsplit(self.path).path)
         if route == "/disc.json":
             self.send_manifest(body)
+            return
+        if route in self.launcher_assets:
+            content_type, data = self.launcher_assets[route]
+            self.send_bytes(data, content_type, body)
             return
 
         if route.startswith("/disc/"):
@@ -67,12 +73,15 @@ class GameHandler(BaseHTTPRequestHandler):
 
     def send_manifest(self, body):
         manifest = json.dumps(sorted(self.disc)).encode("utf-8")
+        self.send_bytes(manifest, "application/json; charset=utf-8", body)
+
+    def send_bytes(self, data, content_type, body):
         self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(manifest)))
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         if body:
-            self.wfile.write(manifest)
+            self.wfile.write(data)
 
     def send_file(self, file, source, body):
         size = source.seek(0, 2)
@@ -141,7 +150,14 @@ def main():
         disc[key] = target
 
     mimetypes.add_type("application/wasm", ".wasm")
-    handler = partial(GameHandler, disc=disc, build=args.build.resolve())
+    options = disc.get("ui/options.bff")
+    assets = {
+        "/launcher-art.png": ("image/png", load_launcher_art(options)),
+        "/launcher-ring.png": ("image/png", load_launcher_ring(options)),
+        "/launcher-font.json": ("application/json", load_launcher_font(disc.get("ui/startup.bff"))),
+    }
+    handler = partial(GameHandler, disc=disc, build=args.build.resolve(),
+                      launcher_assets={route: asset for route, asset in assets.items() if asset[1]})
     with ThreadingHTTPServer(("127.0.0.1", args.port), handler) as server:
         print(f"http://127.0.0.1:{server.server_port}", flush=True)
         try:

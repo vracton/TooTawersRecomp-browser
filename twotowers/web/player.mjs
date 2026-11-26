@@ -1,14 +1,20 @@
 import { restoreProfile } from "./persistence.mjs";
 import { startAudio } from "./audio.mjs";
+import { connectLaunchSettings, connectSaveLibrary } from "./launcher.mjs";
 
 const canvas = document.querySelector("#canvas");
 const gpuCanvas = document.querySelector("#gpu-canvas");
 const launch = document.querySelector("#launch");
 const play = document.querySelector("#play");
+const starting = document.querySelector("#starting");
 const status = document.querySelector("#status");
 const profiler = document.querySelector("#profiler");
+const query = new URLSearchParams(location.search);
+const launchSettings = connectLaunchSettings(query);
+connectSaveLibrary();
 
 function showStatus(message) {
+    starting.hidden = true;
     launch.hidden = false;
     status.hidden = false;
     status.textContent = message;
@@ -36,6 +42,7 @@ function connectCanvas(game) {
         if (firstFrame === undefined) {
             firstFrame = now;
             launch.hidden = true;
+            starting.hidden = true;
         }
         ++frames;
         if (previousFrame !== undefined) {
@@ -195,8 +202,9 @@ function connectInput(game) {
 }
 
 play.addEventListener("click", async () => {
-    play.hidden = true;
-    showStatus("Starting the game…");
+    const settings = launchSettings();
+    launch.querySelector(".launcher").hidden = true;
+    starting.hidden = false;
     try {
         if (!crossOriginIsolated) {
             throw new Error("The page needs cross-origin isolation. Start it with serve.py.");
@@ -233,17 +241,16 @@ play.addEventListener("click", async () => {
                 persist();
             }
         });
-        connectProfiler(connectCanvas(game));
+        const readUsage = connectCanvas(game);
+        if (settings.profiler) connectProfiler(readUsage);
         connectInput(game);
         canvas.focus();
-        const query = new URLSearchParams(location.search);
         const args = [];
         if (query.has("profile")) {
             args.push("--profile-webgl");
         }
-        const fps = query.get("fps");
-        if (fps === "60" || fps === "120" || fps === "unlocked") {
-            args.push(`--fps=${fps}`);
+        if (settings.fps !== "30") {
+            args.push(`--fps=${settings.fps}`);
         }
         game.callMain(args);
     } catch (error) {

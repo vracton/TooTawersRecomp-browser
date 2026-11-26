@@ -161,7 +161,7 @@ if(EMSCRIPTEN)
         "SHELL:--embed-file \"${CMAKE_CURRENT_SOURCE_DIR}/resources/fonts@/fonts\""
     )
     set_target_properties(${PROJECT_NAME} PROPERTIES SUFFIX ".mjs")
-    foreach(asset index.html player.css player.mjs persistence.mjs audio.mjs pcm-player.mjs)
+    foreach(asset index.html player.css player.mjs launcher.mjs persistence.mjs audio.mjs pcm-player.mjs)
         configure_file(web/${asset} ${CMAKE_CURRENT_BINARY_DIR}/${asset} COPYONLY)
     endforeach()
 elseif(WIN32)

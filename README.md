@@ -28,9 +28,13 @@ python serve.py --disc path/to/extracted/game
 ```
 
 Open `http://127.0.0.1:8080` and click **Play**. The server defaults to the
-sibling `twotowers` disc folder and serves it on loopback. IndexedDB stores
-the browser profile for this origin. Use the same host and port to keep using
-the same profile.
+sibling `twotowers` disc folder and serves it on loopback. The launcher
+remembers the frame-rate and profiler settings. **Saves** reads the campaign
+slots from IndexedDB. Download a slot as a `.ttsave` file to share it.
+**Upload** accepts these backups and existing `.xsv` files. To keep an Xbox
+save's original name, date or image, select its `SaveMeta.xbx` or
+`SaveImage.xbx` alongside the `.xsv`. Hold a slot's × button to delete it.
+Use the same host and port to keep using the same browser profile.
 
 ## Browser verification and performance
 

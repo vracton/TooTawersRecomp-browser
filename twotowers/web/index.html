@@ -13,7 +13,56 @@
         <canvas id="canvas" width="640" height="480" tabindex="0" aria-label="The Two Towers game"></canvas>
         <canvas id="gpu-canvas" width="640" height="480" aria-hidden="true"></canvas>
         <div id="launch">
-            <button id="play" type="button">Play</button>
+            <div class="launcher">
+                <header class="launcher-heading">
+                    <h1><span class="launcher-series" data-menu-text>The Lord of the Rings</span><span class="launcher-title" data-menu-text>The Two Towers</span></h1>
+                </header>
+                <section class="launcher-section" aria-labelledby="settings-heading">
+                    <h2 id="settings-heading" data-menu-text>Settings</h2>
+                    <div class="setting-row">
+                        <label for="frame-limit" data-menu-text>Frame rate</label>
+                        <div class="fps-control">
+                            <div class="fps-stops" aria-hidden="true">
+                                <span class="selected"><span data-menu-text>30</span></span>
+                                <span><span data-menu-text>60</span></span>
+                                <span><span data-menu-text>Unlocked</span></span>
+                            </div>
+                            <input id="frame-limit" type="range" min="0" max="2" step="1" value="0" aria-valuetext="30 FPS">
+                        </div>
+                    </div>
+                    <p id="fps-override" class="setting-note" hidden>120 FPS from the launch URL</p>
+                    <div class="setting-row profiler-row">
+                        <label for="show-profiler" data-menu-text>Profiler</label>
+                        <div class="profiler-control">
+                            <input id="show-profiler" type="checkbox" role="switch">
+                            <div aria-hidden="true">
+                                <span data-menu-text>On</span>
+                                <span data-menu-text>Off</span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+                <section class="launcher-section saves" aria-labelledby="saves-heading">
+                    <header>
+                        <h2 id="saves-heading"><span data-menu-text>Saves</span> <span id="save-count" hidden></span></h2>
+                        <button id="upload-save" class="upload-button" type="button" disabled>
+                            <span data-menu-text>Upload</span>
+                        </button>
+                        <input id="save-file" type="file" accept=".ttsave,.xsv,.xbx" multiple hidden>
+                    </header>
+                    <p id="save-empty">Loading saves…</p>
+                    <ul id="save-list" aria-label="Saves on this device" hidden></ul>
+                    <p id="save-message" role="status" hidden></p>
+                </section>
+                <footer class="launcher-footer">
+                    <button id="play" type="button">
+                        <span data-menu-text>Play</span>
+                    </button>
+                </footer>
+            </div>
+            <p id="starting" role="status" hidden>
+                <span data-menu-text>Starting the game</span><span class="loading-dots" data-menu-text aria-hidden="true">...</span>
+            </p>
             <p id="status" role="status" hidden></p>
         </div>
         <details id="profiler" open hidden>
@@ -32,5 +81,19 @@
             </dl>
         </details>
     </main>
+    <template id="save-row">
+        <li class="save-row">
+            <div class="save-label">
+                <strong data-menu-text></strong>
+                <time data-menu-text></time>
+            </div>
+            <button class="save-action download-save" type="button" title="Download save">
+                <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 4v12m-4-4 4 4 4-4M5 15v5h14v-5"/></svg>
+            </button>
+            <button class="save-action delete-save" type="button" title="Hold to delete">
+                <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"/></svg>
+            </button>
+        </li>
+    </template>
 </body>
 </html>
