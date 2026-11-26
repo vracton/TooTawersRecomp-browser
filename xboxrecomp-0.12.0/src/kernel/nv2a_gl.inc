@@ -418,6 +418,9 @@ enum { UB_VSC = 0, UB_PSC = 1, UB_CLC = 2, UB_POST = 3, UB_VPC = 4 };
 typedef struct { GLuint buf; GLenum target; uint32_t cap, pos; uint8_t *map; void *fence[RING_SEGS]; uint32_t seg; } GRing;
 static GRing g_rvb = { 0, GL_ARRAY_BUFFER, 0, 0 }, g_rvbx = { 0, GL_ARRAY_BUFFER, 0, 0 };
 static GRing g_rib = { 0, GL_ELEMENT_ARRAY_BUFFER, 0, 0 }, g_rub = { 0, GL_UNIFORM_BUFFER, 0, 0 };
+#ifdef __EMSCRIPTEN__
+static uint64_t g_index_generation;
+#endif
 #ifndef __EMSCRIPTEN__
 static GLint g_ubo_align = 256;
 #endif
@@ -434,6 +437,8 @@ static void gpu_ring_fresh(GRing *r)
     glBufferData(r->target, r->cap, NULL, GL_STREAM_DRAW);
 #ifdef __EMSCRIPTEN__
     web_profile_add(WEB_PROFILE_ALLOCATION, start);
+    if (r == &g_rib)
+        ++g_index_generation;
 #endif
     if (r == &g_rub) g_rub_fresh = 1;
 #ifndef __EMSCRIPTEN__
@@ -2342,6 +2347,40 @@ static void gpu_transform_all(uint32_t nverts)
 }
 
 static uint32_t g_nidx;
+static uint32_t gpu_upload_indices(void)
+{
+    uint32_t bytes = g_nidx * sizeof(*g_idx);
+#ifdef __EMSCRIPTEN__
+    enum { slots = 256, max_indices = 512 };
+    static struct {
+        uint64_t generation;
+        uint32_t count, offset, indices[max_indices];
+    } cache[slots];
+    if (web_profile_enabled)
+        ++web_index_batches;
+    if (g_nidx && g_nidx <= max_indices) {
+        uint32_t key = g_nidx * 31u + g_idx[0] * 97u + g_idx[g_nidx / 2] * 71u + g_idx[g_nidx - 1];
+        unsigned slot = key % slots;
+        if (cache[slot].count == g_nidx && cache[slot].generation == g_index_generation &&
+            !memcmp(cache[slot].indices, g_idx, bytes)) {
+            if (web_profile_enabled)
+                ++web_index_reuses;
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g_rib.buf);
+            return cache[slot].offset;
+        }
+        uint32_t offset = gpu_ring(&g_rib, g_idx, bytes, sizeof(*g_idx));
+        if (offset != UINT32_MAX) {
+            memcpy(cache[slot].indices, g_idx, bytes);
+            cache[slot].generation = g_index_generation;
+            cache[slot].offset = offset;
+            cache[slot].count = g_nidx;
+        }
+        return offset;
+    }
+#endif
+    return gpu_ring(&g_rib, g_idx, bytes, sizeof(*g_idx));
+}
+
 static void gpu_tri(uint32_t a, uint32_t b, uint32_t c, uint32_t *nverts)
 {
     uint32_t sa = gpu_vertex_slot(a, nverts), sb, sc;
@@ -3277,7 +3316,7 @@ static int gpu_batch_hw(HwVp *hv, uint32_t nverts)
 #ifdef __EMSCRIPTEN__
 vertices_ready:
 #endif
-    ib_at = gpu_ring(&g_rib, g_idx, g_nidx * 4, 4);
+    ib_at = gpu_upload_indices();
     if (ib_at == 0xFFFFFFFFu) return 1;
     if (!g_vpc_ok || s_vpc_dirty) {
         s_vpc_dirty = 0;
@@ -3403,7 +3442,7 @@ cpu_verts_ready:
     {
         GLuint prog;
         vb_at = gpu_ring(&g_rvb, g_verts, nverts * sizeof(GVert), sizeof(GVert));
-        ib_at = gpu_ring(&g_rib, g_idx, g_nidx * 4, 4);
+        ib_at = gpu_upload_indices();
         if (vb_at == 0xFFFFFFFFu || ib_at == 0xFFFFFFFFu) return;
         gpu_bind_stages();
         gpu_set_blend(0);

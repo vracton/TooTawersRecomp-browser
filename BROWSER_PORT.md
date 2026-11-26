@@ -316,3 +316,13 @@ by browser process type during combat, and the longest gap between
 main-thread GPU present notifications crossing the first ten seconds
 after the movie-end event. `TT_BENCH_CAPTURE` optionally names a PNG to
 save at the final combat sample.
+
+WebGL retains the offsets of short triangle index lists in its streaming
+element buffer. It checks the full list before reuse and invalidates all
+offsets when the buffer gets fresh storage. In one profiled combat
+interval, 35,083 of 45,927 draws reused their uploaded indices. In
+`build-web/combat-reuse-natural.json`, the first ten seconds after the
+movie had 251 presents and a 610 ms longest gap. Ten intervals above
+1,400 draws ranged from 51.8 to 60.4 FPS. The last 300 presents averaged
+59.5 FPS with a 30.9 ms p95. Edge's renderer and GPU processes averaged
+2.84 and 3.31 CPU cores over the measured transition and combat.
