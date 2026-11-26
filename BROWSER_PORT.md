@@ -234,3 +234,25 @@ before releasing the guest's frame or flush wait. In a separate run the
 frame recovery fired after 39 and 44 ms in the frontend. First-time 3D
 submission still stalled with no recovery logged. See the local
 `build-web/combat-stream-play.log` and `build-web/combat-fence-play.log`.
+
+WebGL now advances the same texture-check clock as D3D11. Static art is
+checked in staggered groups, and linear movie textures retain their
+per-pushbuffer checks. The renderer reuses unchanged texture bindings,
+samplers, uniform-buffer bindings and vertex-array state. It rebuilds
+texture-stage state for each new pushbuffer and for draws that sample a
+render target. Successful reads no longer flush a console message by
+default. `RECOMP_READ_TRACE` restores that trace.
+
+On Edge with the Radeon 780M, the 60 FPS run in `build-web/combat-final-play.log`
+averaged 59.8 FPS over its last 300 presents, with 31.1 ms p95, 442.5 MiB
+of Wasm memory and 903 cumulative audio underruns. The busiest intervals
+around 1,400–1,700 draws per frame ran at 26–49 FPS. Two first-level
+presents took 2.60 and 4.48 seconds. From story playback through the
+battle sample, Edge's renderer and GPU processes consumed 2.87 and 3.38
+CPU cores on average. These are process CPU times divided by elapsed time.
+The isolated runs reached different enemy counts as the battle progressed.
+
+Earlier experiments combined shadow-shader warmup, eager Wasm heap growth,
+alternative worker waits and different linker settings. Their last-300
+averages ranged from 26.1 to 50.5 FPS. They did not establish an advantage
+in the crowded scene and were dropped.

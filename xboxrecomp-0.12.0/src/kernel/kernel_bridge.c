@@ -3632,6 +3632,9 @@ static void bridge_NtReadFile(void)
     /* What a read actually delivered. A decoder that rejects its input cannot
      * say whether the bytes were wrong or the read was, and the two look
      * identical from inside the title -- the first bytes settle it. */
+#ifdef __EMSCRIPTEN__
+    if ((NTSTATUS)g_eax < 0 || getenv("RECOMP_READ_TRACE"))
+#endif
     {
         const uint8_t *p = (const uint8_t *)XBOX_TO_NATIVE(buffer_va);
         uint32_t got = (uint32_t)ios.Information;
@@ -3654,8 +3657,8 @@ static void bridge_NtReadFile(void)
                     got > 0 ? p[0] : 0, got > 1 ? p[1] : 0,
                     got > 2 ? p[2] : 0, got > 3 ? p[3] : 0);
         fflush(stderr);
-        if (xbox_read_observer && poff) xbox_read_observer(g_xbox_kernel_caller, (long long)off.QuadPart, length);
     }
+    if (xbox_read_observer && poff) xbox_read_observer(g_xbox_kernel_caller, (long long)off.QuadPart, length);
     bridge_write_iostatus(iostatus, ios.Status, (uint32_t)ios.Information);
     bridge_complete_file_io(STACK_ARG(1), STACK_ARG(2), STACK_ARG(3),
                             iostatus);

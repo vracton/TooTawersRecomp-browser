@@ -498,7 +498,7 @@ static uint32_t gpu_ring(GRing *r, const void *data, uint32_t bytes, uint32_t al
         r->cap = bytes < min ? min : bytes * 2;
         glBindBuffer(r->target, r->buf);
         gpu_ring_fresh(r);
-        r->pos = r->cap;
+        r->pos = 0;
     } else glBindBuffer(r->target, r->buf);
     if (!align) align = 1;
     at = (r->pos + align - 1) / align * align;
@@ -528,7 +528,9 @@ static uint32_t gpu_ring(GRing *r, const void *data, uint32_t bytes, uint32_t al
  * happened to keep the old contents there; NVIDIA's driver does not, and surfaces flickered grey and jumped, most
  * when paused (the constants unchanged the longest). Now every block bound before is sent again into the fresh store. */
 #define UB_N 5
-#ifndef __EMSCRIPTEN__
+#ifdef __EMSCRIPTEN__
+extern void APIENTRY glBindBufferBase(GLenum target, GLuint index, GLuint buffer);
+#else
 #define UB_KEEP (192 * 16)
 static unsigned char g_ub_last[UB_N][UB_KEEP];
 static uint32_t g_ub_len[UB_N];
@@ -538,13 +540,15 @@ static void gpu_ub(int binding, const void *data, uint32_t bytes)
 #ifdef __EMSCRIPTEN__
     static GLuint buffers[UB_N];
     GLuint *buffer = &buffers[binding];
-    if (!*buffer)
+    int new_buffer = !*buffer;
+    if (new_buffer)
         glGenBuffers(1, buffer);
     glBindBuffer(GL_UNIFORM_BUFFER, *buffer);
     double start = web_profile_begin();
     glBufferData(GL_UNIFORM_BUFFER, bytes, data, GL_STREAM_DRAW);
     web_profile_add(WEB_PROFILE_UPLOAD, start);
-    glBindBufferRange(GL_UNIFORM_BUFFER, (GLuint)binding, *buffer, 0, bytes);
+    if (new_buffer)
+        glBindBufferBase(GL_UNIFORM_BUFFER, (GLuint)binding, *buffer);
 #else
     uint32_t at = gpu_ring(&g_rub, data, bytes, (uint32_t)g_ubo_align);
     if (at != 0xFFFFFFFFu) glBindBufferRange(GL_UNIFORM_BUFFER, (GLuint)binding, g_rub.buf, at, bytes);
@@ -2026,6 +2030,19 @@ static PsKey g_pskey;
 
 static void gpu_bind_stages(void)
 {
+    static int surf_log = -1;
+    if (surf_log < 0) surf_log = getenv("RECOMP_SURF_LOG") != NULL;
+#ifdef __EMSCRIPTEN__
+    const uint32_t stage_changes = GRP_TEX | GRP_COMB | GRP_OTHER | GRP_RUN;
+    static int reusable;
+    static long texture_revision;
+    if (reusable && !s_su_always && !(s_grp & stage_changes) &&
+        texture_revision == xbox_tex_rev && g_sh.tex_ok && g_sh.cbps_ok)
+        return;
+    s_grp &= ~stage_changes;
+    reusable = 1;
+    texture_revision = xbox_tex_rev;
+#endif
     struct {
         int cin[4], ain[4], f1[4], f2[4], f3[4]; float c0[4], c1[4];
     } st[8];
@@ -2083,7 +2100,10 @@ static void gpu_bind_stages(void)
         tail.sscale[k][1] = S->t.height ? 1.0f / (float)S->t.height : 1.0f;
         if ((fl & 1) && (fl & 2)) {
             gs = gpu_surface_for_texture(S->t.offset, S->t.width, S->t.height, &isd);
-            if (getenv("RECOMP_SURF_LOG") && (gs || (S->t.width <= 256 && S->t.height <= 256 && S->t.offset < 0x04000000u
+#ifdef __EMSCRIPTEN__
+            if (gs) reusable = 0;
+#endif
+            if (surf_log && (gs || (S->t.width <= 256 && S->t.height <= 256 && S->t.offset < 0x04000000u
                                                      && gsurf_near(S->t.offset)))) {
                 static uint32_t seen[64]; static int ns; int q;
                 uint32_t key = S->t.offset ^ (s_tex_reg[k * 0x10 + 1] << 4);
@@ -2140,14 +2160,18 @@ static void gpu_bind_stages(void)
         gpu_ub(UB_PSC, cb, sizeof cb);
         memcpy(g_sh.cbps, cb, sizeof cb); g_sh.cbps_ok = 1;
     }
-    if (!g_sh.tex_ok || memcmp(g_sh.tex, tex, sizeof tex) || memcmp(g_sh.smp, smp, sizeof smp)) {
-        for (k = 0; k < 4; k++) {
+    for (k = 0; k < 4; k++) {
+        if (!g_sh.tex_ok || g_sh.tex[k] != tex[k]) {
             glActiveTexture(GL_TEXTURE0 + k);
             glBindTexture(GL_TEXTURE_2D, tex[k]);
-            glBindSampler((GLuint)k, smp[k]);
+            g_sh.tex[k] = tex[k];
         }
-        memcpy(g_sh.tex, tex, sizeof tex); memcpy(g_sh.smp, smp, sizeof smp); g_sh.tex_ok = 1;
+        if (!g_sh.tex_ok || g_sh.smp[k] != smp[k]) {
+            glBindSampler((GLuint)k, smp[k]);
+            g_sh.smp[k] = smp[k];
+        }
     }
+    g_sh.tex_ok = 1;
 }
 
 /* ---------------- vertices on the CPU ---------------- */
@@ -3143,8 +3167,10 @@ static int gpu_batch_hw(HwVp *hv, uint32_t nverts)
 #endif
     if (!prog) return 0;
     if (hv->nin) {
-        glBindVertexArray(g_vao_x);
-        g_sh.vao = 2;
+        if (g_sh.vao != 2) {
+            glBindVertexArray(g_vao_x);
+            g_sh.vao = 2;
+        }
 #ifdef __EMSCRIPTEN__
         if (web_profile_enabled)
             ++web_vertex_draws;
@@ -3185,7 +3211,7 @@ static int gpu_batch_hw(HwVp *hv, uint32_t nverts)
         for (; k < g_hw_attribs; k++)
             glDisableVertexAttribArray(k);
         g_hw_attribs = hv->nin;
-    } else {
+    } else if (g_sh.vao != 3) {
         glBindVertexArray(g_vao_empty);
         g_sh.vao = 3;
     }
@@ -3199,7 +3225,6 @@ vertices_ready:
         g_vpc_ok = 1;
         gpu_ub(UB_VPC, g_vpc_shadow, sizeof g_vpc_shadow);
     }
-    if (g_sh.vao != 2 && hv->nin) { glBindVertexArray(g_vao_x); g_sh.vao = 2; }
     gpu_set_blend(0);
     gpu_set_depth(g_cur_ds != NULL);
     gpu_use(prog);
@@ -3711,6 +3736,7 @@ static void gpu_present(uint32_t base, uint32_t pitch)
 #else
     if (!g_win || !s) return;
 #endif
+    texc_present();
     gsurf_sync_from_mem(s);
     gsurf_resolve(s);   /* (MSAA: the picture from its samples) */
     {

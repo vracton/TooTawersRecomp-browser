@@ -773,15 +773,26 @@ typedef struct {
 extern volatile uint32_t g_pb_runs;
 static TexCacheEnt s_texc[TEXC_SLOTS];
 static uint64_t s_texc_clock;
-/* (1.9.3) Frames presented (the D3D11 renderer counts them). Swizzled
+/* (1.9.3) Frames presented. Swizzled
  * textures -- loaded art the CPU does not rewrite as it goes -- have their
  * content checked once a frame rather than once a kick: re-summing a couple
  * of hundred textures at every kick was a large part of the render thread's
- * time. The tick advances with presented frames, but at most every 8 ms:
+ * time. The tick advances with presented frames, at up to 60 Hz:
  * at hundreds of frames a second, once a frame was still most of the
  * render thread's own work. Linear ones (movie frames, the CPU's own pictures) are still checked
  * at every kick. RECOMP_TEX_CHECK_KICK=1: every texture at every kick. */
 static uint32_t s_texc_frame;
+static void texc_present(void)
+{
+    static LARGE_INTEGER frequency, last;
+    LARGE_INTEGER now;
+    if (!frequency.QuadPart) QueryPerformanceFrequency(&frequency);
+    QueryPerformanceCounter(&now);
+    if (now.QuadPart - last.QuadPart >= frequency.QuadPart / 60) {
+        ++s_texc_frame;
+        last = now;
+    }
+}
 /* (1.9.3) a slow frame's breakdown for the log ([SLOWFRAME], nv2a_d3d11.inc) */
 static long long g_slow_dec_t, g_slow_up_t, g_slow_sync_t, g_slow_sh_t, g_slow_rt_t;
 static unsigned g_slow_dec_n, g_slow_up_n, g_slow_sync_n, g_slow_sh_n, g_slow_rb_n, g_slow_new_n;

@@ -3483,12 +3483,7 @@ static void gpu_present(uint32_t base, uint32_t pitch)
             g_slow_dec_n = g_slow_up_n = g_slow_sync_n = g_slow_sh_n = g_slow_rb_n = g_slow_new_n = 0;
             g_slow_big_px = 0; g_slow_big_w = g_slow_big_h = g_slow_big_fmt = g_slow_big_off = 0;
         }
-        {   /* the swizzled textures' check tick (nv2a_sw3d.inc): at most every 8 ms */
-            static LARGE_INTEGER tq, tf; LARGE_INTEGER tn;
-            if (!tf.QuadPart) QueryPerformanceFrequency(&tf);
-            QueryPerformanceCounter(&tn);
-            if (tn.QuadPart - tq.QuadPart >= tf.QuadPart / 60) { s_texc_frame++; tq = tn; }   /* (1.9.5: 16 ms, was 8) */
-        }
+        texc_present();
         if (g_stretch_on < 0) g_stretch_on = getenv("RECOMP_PRESENT_STRETCH") != NULL;
         ID3D11DeviceContext_ClearRenderTargetView(g_ctx, g_sc_rtv, black);
         if (g_stretch_on) { pw = ww; ph = wh; }
