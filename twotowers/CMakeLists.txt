@@ -138,7 +138,7 @@ if(EMSCRIPTEN)
     target_compile_options(${PROJECT_NAME} PRIVATE
         -Wno-incompatible-pointer-types -Wno-int-conversion -Wno-format)
     target_link_options(${PROJECT_NAME} PRIVATE
-        -O1
+        "$<IF:$<CONFIG:Release>,-O2,-O1>"
         -pthread
         -sPROXY_TO_PTHREAD
         -sOFFSCREENCANVAS_SUPPORT

@@ -1588,11 +1588,25 @@ static GLuint gpu_tri_program(const char *vs_def, const char *fs_def, GLint *ys_
 typedef struct {
     GLuint vs, fs, prog;
     int state;                  /* 0 linking, 1 ready, 2 failed */
+#ifdef __EMSCRIPTEN__
+    double next_poll;
+#endif
 } GPair;
 #define GPAIR_MAX 4096
 static GPair *g_pair;
 static int g_pair_n;
 static uint32_t g_pair_hash_tab[8192];          /* index + 1, open addressing */
+
+#ifdef __EMSCRIPTEN__
+static int gpu_compile_poll_due(double *next_poll)
+{
+    double now = emscripten_get_now();
+    if (now < *next_poll)
+        return 0;
+    *next_poll = now + 2.0;
+    return 1;
+}
+#endif
 
 static int gpu_pair_ready(GPair *e)
 {
@@ -1600,6 +1614,10 @@ static int gpu_pair_ready(GPair *e)
     if (e->state != 0) return e->state == 1;
     if (g_parallel) {
         GLint done = 0;
+#ifdef __EMSCRIPTEN__
+        if (!gpu_compile_poll_due(&e->next_poll))
+            return 0;
+#endif
         glGetProgramiv(e->prog, GL_COMPLETION_STATUS_KHR, &done);
         if (!done) return 0;
     }
@@ -2364,6 +2382,9 @@ typedef struct {
     uint32_t nin;
     uint8_t  inreg[16];
     GLuint vs;
+#ifdef __EMSCRIPTEN__
+    double next_poll;
+#endif
 } HwVp;
 
 #define HWVP_MAX 512
@@ -2537,6 +2558,10 @@ static int hwvp_enabled(void)
 static void hwvp_poll(HwVp *e)
 {
     if (e->state == 0 && e->vs) {
+#ifdef __EMSCRIPTEN__
+        if (g_parallel && !gpu_compile_poll_due(&e->next_poll))
+            return;
+#endif
         int r = gpu_shader_done(&e->vs, "vertex program", e->hash);
         if (r > 0) { e->state = 1; g_hwvp_compiled++; }
         else if (r < 0) { e->state = 2; g_hwvp_failed++; }
@@ -2549,10 +2574,23 @@ static HwVp *hwvp_lookup(void)
     uint32_t h, i;
     HwVp *e;
     if (!g_hwvp_user || !hwvp_enabled() || s_3d.mode != 2 || s_vp_slow || !s_vpd_len) return NULL;
+#ifdef __EMSCRIPTEN__
+    static uint32_t revision;
+    static HwVp *last;
+    if (last && revision == s_vpd_rev) {
+        hwvp_poll(last);
+        return last->state == 1 ? last : NULL;
+    }
+    revision = s_vpd_rev;
+    last = NULL;
+#endif
     h = hwvp_hash((const uint32_t (*)[4])s_vpd_src, s_vpd_len);
     for (i = 0; i < (uint32_t)g_hwvp_n; i++) {
         e = g_hwvp[i];
         if (e->hash == h && e->len == s_vpd_len && !memcmp(e->words, s_vpd_src, s_vpd_len * 16)) {
+#ifdef __EMSCRIPTEN__
+            last = e;
+#endif
             hwvp_poll(e);
             return e->state == 1 ? e : NULL;
         }
@@ -2568,6 +2606,9 @@ static HwVp *hwvp_lookup(void)
         else { if (getenv("RECOMP_VPSRC")) fprintf(stderr, "[VPSRC] %08X len %u\n%s\n", (unsigned)h, (unsigned)s_vpd_len, src); e->vs = gpu_shader_start(GL_VERTEX_SHADER, src); free(src); }
     }
     g_hwvp[g_hwvp_n++] = e;
+#ifdef __EMSCRIPTEN__
+    last = e;
+#endif
     hwvp_poll(e);
     return e->state == 1 ? e : NULL;
 }
@@ -2611,6 +2652,9 @@ typedef struct {
     PsKey key;
     uint32_t hash, state;             /* 0 compiling, 1 ready, 2 failed */
     GLuint fs;
+#ifdef __EMSCRIPTEN__
+    double next_poll;
+#endif
 } HwPs;
 
 #define HWPS_MAX 1024
@@ -2787,6 +2831,10 @@ static uint32_t hwps_hash(const PsKey *k)
 static void hwps_poll(HwPs *e)
 {
     if (e->state == 0 && e->fs) {
+#ifdef __EMSCRIPTEN__
+        if (g_parallel && !gpu_compile_poll_due(&e->next_poll))
+            return;
+#endif
         int r = gpu_shader_done(&e->fs, "combiner program", e->hash);
         if (r > 0) { e->state = 1; g_hwps_compiled++; }
         else if (r < 0) { e->state = 2; g_hwps_failed++; }

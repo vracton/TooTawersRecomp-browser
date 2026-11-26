@@ -10,7 +10,7 @@ the original disc data, progression, movies, controls, and 4:3 framing.
 
 | Area | Implementation |
 | --- | --- |
-| Build | [CMake](twotowers/CMakeLists.txt) compiles the existing generated game C and runtime with Emscripten 7.0.1, pthreads, WasmFS, and SDL2. It emits `build-web/twotowers_recomp.mjs` and `.wasm` and copies the player files into the same directory. The link uses `-O1` to keep relinks practical while retaining the Release object compilation settings. The SDK pin matches the C++ WasmFS interface used by the sparse partition backend. A native executable remains available for comparison. |
+| Build | [CMake](twotowers/CMakeLists.txt) compiles the existing generated game C and runtime with Emscripten 7.0.1, pthreads, WasmFS, and SDL2. It emits `build-web/twotowers_recomp.mjs` and `.wasm` and copies the player files into the same directory. Release links use `-O2`; other configurations use `-O1`. The SDK pin matches the C++ WasmFS interface used by the sparse partition backend. A native executable remains available for comparison. |
 | Disc | [serve.py](serve.py) validates the retail XBE hash and serves the extracted folder read-only on loopback. The default folder is the sibling `twotowers`, with `--disc` available for other locations. `/disc.json` lists lowercase relative paths, and `/disc/` serves byte ranges. [web_host.c](twotowers/src/web_host.c) mounts those files under `/game_files` with WasmFS FetchFS. The server sends the isolation headers needed for shared memory and pthreads. |
 | Launch and display | [player.mjs](twotowers/web/player.mjs) waits for **Play** before resuming Web Audio, loading the Wasm module and disc manifest, restoring the profile, and calling the game entry point. [main.c](twotowers/src/main.c) selects a 640×480 render size, 4:3 framing, render scale 1, and a 30 FPS gameplay target. [player.css](twotowers/web/player.css) fits the image inside the tab with black bars. |
 | Guest memory | [xbox_memory_layout.c](xboxrecomp-0.12.0/src/kernel/xbox_memory_layout.c) maps the guest ranges and GPU aliases into Wasm linear memory. `xbox_GuestAddress` translates guest pointers. The [C lowering pass](twotowers/web/lower_memory.py) converts generated `MEM8`, `MEM16`, and `MEM32` operations for the browser build so MMIO reaches the device handlers explicitly. APU DMA uses the contiguous physical aperture, and hand-written menu and prompt hooks also translate guest pointers. |
@@ -283,3 +283,15 @@ lets the story finish, enters the first battle, sends attack and movement
 input, and emits JSON containing resource samples and frame intervals.
 `--skip-story` measures entry after a skip, which exercises a different
 loading schedule.
+
+The Release link reduced the module from 30.77 to 25.97 MB. On its own
+it still produced single-present intervals of 1.12 and 2.03 seconds at
+the natural transition. WebGL now reuses the vertex shader lookup until
+the guest program changes and checks each pending shader or program at
+most once every 2 ms while the driver compiles it. In the next natural
+run, the first interval over 500 draws per frame reached 10.4 FPS
+(11 presents in 1,058 ms, 936 draws per frame). The last 300 presents
+averaged 59.7 FPS with a 31.3 ms p95. Intervals above 1,400 draws ranged
+from 53 to 60 FPS. Enemy count and compilation timing vary between runs.
+See `build-web/combat-O2-natural.json` and
+`build-web/combat-shader-poll-natural.json`.
