@@ -34,6 +34,7 @@ async function benchmark() {
         });
         const errors = [];
         const intervals = [];
+        const worldTiming = [];
         let workersCreated = 0;
         page.on("worker", () => ++workersCreated);
         let inBattle = false;
@@ -45,6 +46,14 @@ async function benchmark() {
             if (line.includes("[FILM] mont,")) inStory = true;
             if (inStory && line.includes("[FILM] over after")) inBattle = true;
             if (!inBattle) return;
+            const timing = /\[FRAMETIME\].*\((\d+) steps, (\d+) frames shown\): the world moved ([\d.]+)%/.exec(line);
+            if (timing) {
+                worldTiming.push({
+                    steps: Number(timing[1]),
+                    presents: Number(timing[2]),
+                    percentRealTime: Number(timing[3]),
+                });
+            }
             const fps = /\[FPS\] (\d+) flips, apu \d+ periods in (\d+) ms/.exec(line);
             if (fps) {
                 interval = { frames: Number(fps[1]), milliseconds: Number(fps[2]) };
@@ -116,7 +125,7 @@ async function benchmark() {
             throw new Error(`Combat benchmark failed. ${errors.join("\n")}`);
         if (process.env.TT_BENCH_CAPTURE)
             await page.screenshot({ path: process.env.TT_BENCH_CAPTURE });
-        console.log(JSON.stringify({ url, movieEnd, transition, battle, cpuCores, intervals }, null, 2));
+        console.log(JSON.stringify({ url, movieEnd, transition, battle, cpuCores, worldTiming, intervals }, null, 2));
     } finally {
         await browser.close();
     }

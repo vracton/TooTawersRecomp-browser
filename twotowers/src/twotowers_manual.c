@@ -1112,7 +1112,7 @@ void sub_0011DA80(void)
  * has counted 2 vblanks (30 fps) or 1 (60 fps), chosen by the flag at
  * 0x4B75F1 that it sets itself (0 = 60 in menus and some sequences, 1 = 30 in
  * gameplay). The hook below runs at every guest sleep:
- *   60       keeps the flag at 0, so every frame waits for one vblank;
+ *   60       uses one vblank on desktop and the presentation clock on the web;
  *   unlocked fills the vblank counter, so the wait ends at once.
  * EXPERIMENTAL: if the game advances its simulation by a fixed step per
  * frame, gameplay runs faster than normal in these modes. */
@@ -1311,8 +1311,14 @@ static void tt_delay_hook(void)
     /* Movies pace themselves through the same wait (two vblanks a frame),
      * so they are left at stock speed. */
     if (xbox_MoviePlaying()) { if (tt_fps_mode == 1) MEM8(0x4B75F1u) = 1; return; }
-    if (tt_fps_mode == 1) MEM8(0x4B75F1u) = 0;
-    else if (tt_fps_mode >= 2) {
+    int guest_mode = tt_fps_mode;
+#ifdef __EMSCRIPTEN__
+    extern int xbox_WebGpuOwnsFramebuffer(void);
+    if (guest_mode == 1 && xbox_WebGpuOwnsFramebuffer())
+        guest_mode = 2;
+#endif
+    if (guest_mode == 1) MEM8(0x4B75F1u) = 0;
+    else if (guest_mode >= 2) {
         /* (unlocked: 1.8.1 -- unlocked throughout again; choose 60 before the scenes instead) */
         /* (1.9.3) A frame no sooner than one period after the last: the
          * frame wait is ended (the vblank counter filled) once a period,
@@ -1326,7 +1332,7 @@ static void tt_delay_hook(void)
         if (cap < 0) { const char *c = getenv("TT_FPS_CAP"); cap = c ? atoi(c) : 0; QueryPerformanceFrequency(&fq); }
         /* (1.9.3) unlocked: up to 1000 frames a second -- a frame under a
          * millisecond is one the game's world does not move in */
-        hz = cap > 0 ? cap : tt_fps_mode == 3 ? xbox_DisplayRefreshHz() : tt_fps_cap > 0 ? tt_fps_cap : 1000;
+        hz = cap > 0 ? cap : guest_mode == 3 ? xbox_DisplayRefreshHz() : tt_fps_cap > 0 ? tt_fps_cap : 1000;
         if (hz < 30) hz = 1000;   /* (rate unknown) */
         /* (1.9.8) the front end (the intros, the title, the menus: any screen but play, 6) at most 240 frames a second: at
          * 700-1000 (unlocked, a fast PC) its timers, kept in whole milliseconds, hardly moved -- Start and Enter at the main

@@ -880,6 +880,9 @@ static Uint32 s_ev_fullscreen;           /* SDL user event: set full screen */
 
 void *xbox_FramebufferHwnd(void) { return (void *)s_win; }
 void xbox_FramebufferSetGpuOwned(int on) { InterlockedExchange(&s_fb_gpu, on); }
+#ifdef __EMSCRIPTEN__
+int xbox_WebGpuOwnsFramebuffer(void) { return __atomic_load_n(&s_fb_gpu, __ATOMIC_ACQUIRE) != 0; }
+#endif
 int xbox_FramebufferHasFocus(void) { return s_focus; }
 /* the mouse over the window (fractions of its inside; 1 inside), for a
  * title's pointer; while it draws one, the system's is hidden over it */

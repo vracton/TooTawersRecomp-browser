@@ -396,3 +396,39 @@ reached 46.9–56.8 FPS. In separate four-second busy-scene CPU profiles,
 the game thread spent 441 ms in the guest address translation function
 before the change and had zero samples there afterward. The two CPU
 profiles used different caps and did not follow identical enemy movement.
+
+### One presentation clock for browser 60 FPS gameplay
+
+The previous 60 FPS mode waited for the emulated console's next vblank
+and then applied the WebGL presentation limit. In the browser, 60 FPS
+now runs the guest frame wait through the unlocked path and lets the
+renderer pace completed frames to 60 FPS. The game still waits for
+its GPU work. The stock 30 FPS mode and Bink use their original timing.
+The benchmark records the game's simulation-step count, presents and
+world time alongside frame intervals.
+
+In consecutive natural movie-to-Isildur runs at the 60 FPS setting,
+the median interval rate above 1,400 draws per frame rose from 54.3 to
+60.0 FPS. The observed ranges were 46.9–56.8 and 56.3–61.8 FPS. Enemy
+movement varies between runs. The last 300 frames on the new run
+averaged 60.1 FPS, with a 24.7 ms p95. The first ten seconds after the
+movie contained 567 presents with a 240 ms longest gap. The three full
+ten-second gameplay samples each recorded 601 simulation steps and 601
+presents, with world time at 100% of real time. The run ended with zero
+audio underruns and 368.75 MiB of Wasm memory.
+
+The same-tab F10 comparison alternated between 60 and Unlocked twice
+during one fight. At 1,500–1,840 draws per frame, the capped samples
+had a median of 60.0 FPS and ranged from 52.9 to 62.7. Unlocked reached
+80.5–101.8 FPS. See `build-web/combat-bank-natural.json`,
+`build-web/combat-single-clock-natural.json` and `build-web/combat-live-caps.json`.
+A separate movie-skip run averaged 50.8 FPS over its final 300 presents and
+had a 329 ms transition gap. The presentation change alone does not sustain
+60 FPS in every fight. Software rendering retains the guest vblank wait.
+
+In a later movie-skip run on the shipping code, the final 300 presents
+averaged 54.6 FPS. The crowded intervals ranged from 25.4 to 38.5 FPS
+and the longest transition gap was 348 ms. A trial that replaced the
+renderer's deadline wait with a single atomic sleep raised the final
+p95 from 34.4 to 46.3 ms and the transition gap to 595 ms. That trial
+was discarded. Both runs kept the simulation at real time.

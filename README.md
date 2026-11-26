@@ -43,8 +43,9 @@ time to the first frame, FPS and 95th-percentile frame interval across the
 last 300 presents, Wasm linear memory, and audio underruns. Load `/?profile`
 for per-frame WebGL submission timings in the console. Those timings measure
 CPU-side submission and any waits it encounters. Use the browser profiler to
-measure process CPU and memory separately. `/?fps=60` and `/?fps=120` raise
-the gameplay cap for headroom tests. `/?fps=unlocked` selects the same
+measure process CPU and memory separately. `/?fps=60` uses unlocked guest
+timing and caps presentation at 60 FPS. `/?fps=120` selects the 120 FPS
+gameplay cap. `/?fps=unlocked` selects the same
 Unlocked mode as **Frame rate** in the in-game display settings (F10), with a
 1000 FPS ceiling. The default gameplay target is 30 FPS.
 
