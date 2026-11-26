@@ -16,11 +16,84 @@ import sys
 # A definition is "void sub_XXXXXXXX(void)" followed by a body -- on the same
 # line (`void sub_X(void) { esp += 4; return; }`) or the next. A declaration
 # ends in ';' and must not match.
-DEF_RE = re.compile(r"^void (\w*?(?:sub_)?([0-9A-Fa-f]{8}))\(void\)\s*(?:\{|$)", re.M)
-_SUB_DEF_RE = re.compile(r"^void (sub_([0-9A-Fa-f]{8}))\(void\)\s*(?:\{|$)", re.M)
+DEF_RE = re.compile(r"\bvoid\s+(\w*?(?:sub_)?([0-9A-Fa-f]{8}))\s*\(\s*void\s*\)\s*\{")
+_SUB_DEF_RE = re.compile(r"\bvoid\s+(sub_([0-9A-Fa-f]{8}))\s*\(\s*void\s*\)\s*\{")
 # recomp_manual.c wraps rather than replaces some functions: it defines sub_X
 # itself and calls the generated body as sub_X_gen.
-_WRAP_RE = re.compile(r"^extern void (sub_([0-9A-Fa-f]{8}))_gen\(void\);", re.M)
+_WRAP_RE = re.compile(r"\b(sub_([0-9A-Fa-f]{8}))_gen\b")
+
+
+def _code_only(src):
+    """Mask comments and literals without joining tokens or losing newlines."""
+    tokens = r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\''
+    return re.sub(tokens, lambda m: re.sub(r"[^\n]", " ", m.group()),
+                  src, flags=re.S)
+
+
+def _expand_definition_macros(src):
+    """Expand local function macros that emit declarations/definitions.
+
+    This is a source scanner, not a platform C preprocessor: leave unrelated
+    expression macros and platform conditionals alone. Handle continued macro
+    bodies, token pasting, and wrapper macros calling other wrapper macros.
+    """
+    src = re.sub(r"\\\r?\n", "", src)
+    macros = {}
+    pattern = re.compile(r"^[ \t]*#[ \t]*define[ \t]+(\w+)\(([^)\n]*)\)[ \t]*(.*)$", re.M)
+    for m in pattern.finditer(src):
+        params = [p.strip() for p in m[2].split(",") if p.strip()]
+        if all(re.fullmatch(r"\w+", p) for p in params):
+            macros[m[1]] = (params, m[3])
+    selected = {name for name, (_, body) in macros.items()
+                if re.search(r"\bvoid\b", body)}
+    while True:
+        parents = {name for name, (_, body) in macros.items()
+                   if any(re.search(r"\b" + re.escape(child) + r"\s*\(", body)
+                          for child in selected)}
+        if parents <= selected:
+            break
+        selected |= parents
+    # Never scan uninstantiated macro bodies as actual C definitions.
+    src = re.sub(r"^[ \t]*#.*$", "", src, flags=re.M)
+    if not selected:
+        return src
+    calls = re.compile(r"\b(" + "|".join(map(re.escape, sorted(selected))) + r")\s*\(")
+
+    def expand(text, active=frozenset()):
+        out, pos = [], 0
+        for m in calls.finditer(text):
+            if m.start() < pos or m[1] in active:
+                continue
+            depth, start, args = 1, m.end(), []
+            end = start
+            while end < len(text) and depth:
+                ch = text[end]
+                if ch == "(":
+                    depth += 1
+                elif ch == ")":
+                    depth -= 1
+                if (ch == "," and depth == 1) or depth == 0:
+                    args.append(text[start:end].strip())
+                    start = end + 1
+                end += 1
+            params, body = macros[m[1]]
+            if not params and args == [""]:
+                args = []
+            if depth or len(args) != len(params):
+                continue
+            values = dict(zip(params, args))
+            body = re.sub(r"\b\w+\b", lambda t: values.get(t[0], t[0]), body)
+            body = re.sub(r"\s*##\s*", "", body)
+            out.extend((text[pos:m.start()], expand(body, active | {m[1]})))
+            pos = end
+        out.append(text[pos:])
+        return "".join(out)
+
+    return expand(src)
+
+
+def _scan_text(path):
+    return _expand_definition_macros(_code_only(read_live(path)))
 
 
 def strip_disabled(src):
@@ -44,7 +117,7 @@ def strip_disabled(src):
     return "".join(out)
 
 
-_INC_RE = re.compile(r'^#include "([^"]+\.(?:inc|c))"', re.M)
+_INC_RE = re.compile(r'^[ \t]*#[ \t]*include\s+"([^"]+\.(?:inc|c))"', re.M)
 
 
 def read_live(path):
@@ -64,7 +137,7 @@ def definition_names(path):
     """Names of functions actually defined (compiled) in `path`."""
     if not os.path.exists(path):
         return set()
-    live = read_live(path)
+    live = _scan_text(path)
     return {m.group(1) for m in _SUB_DEF_RE.finditer(live)}
 
 
@@ -86,7 +159,7 @@ def scan(path):
     if not os.path.exists(path):
         print(f"WARNING: {path} not found; excluding nothing.", file=sys.stderr)
         return set(), set(), set()
-    live = read_live(path)
+    live = _scan_text(path)
     skip = {int(m.group(2), 16) for m in _SUB_DEF_RE.finditer(live)}
     wrap = {int(m.group(2), 16) for m in _WRAP_RE.finditer(live)}
     referenced = {int(m.group(1), 16) for m in _REF_RE.finditer(live)}

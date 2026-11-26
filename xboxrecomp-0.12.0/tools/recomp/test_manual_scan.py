@@ -107,6 +107,50 @@ def test_missing_file_excludes_nothing():
     assert skip == set() and wrap == set() and ref == set()
 
 
+def test_wrappers_with_spacing_macros_and_implicit_declarations():
+    source = r'''
+    #define WRAP(fn) extern void fn ## _gen(void); \
+        void fn(void) { fn ## _gen(); }
+    #define OUTER(fn) WRAP(fn)
+    WRAP(sub_00071000)
+    OUTER(sub_00072000)
+    void sub_00073000 ( void ) { sub_00073000_gen(); }
+    void sub_00074000(void) {
+        extern void sub_00074000_gen ( void );
+        sub_00074000_gen();
+    }
+    void sub_00075000(void)
+    ;
+    /* void sub_00076000(void) { sub_00076000_gen(); } */
+    const char *s = "void sub_00077000(void) { sub_00077000_gen(); }";
+    #define UNUSED(fn) void sub_00078000(void) { fn(); }
+    #if 0
+    WRAP(sub_00079000)
+    #endif
+    '''
+    with tempfile.TemporaryDirectory() as tmp:
+        p = os.path.join(tmp, "manual.c")
+        with open(p, "w") as f:
+            f.write(source)
+        skip, wrap, ref = scan(p)
+        names = definition_names(p)
+    expected = {0x71000, 0x72000, 0x73000, 0x74000}
+    assert skip == wrap == expected, (skip, wrap)
+    assert names == {f"sub_{a:08X}" for a in expected}, names
+    assert ref == expected | {0x75000}, ref
+
+
+def test_indented_local_include():
+    with tempfile.TemporaryDirectory() as tmp:
+        p = os.path.join(tmp, "manual.c")
+        with open(p, "w") as f:
+            f.write('  # include "part.inc"\n')
+        with open(os.path.join(tmp, "part.inc"), "w") as f:
+            f.write('  void sub_00081000(void) { sub_00081000_gen(); }\n')
+        skip, wrap, _ = scan(p)
+    assert skip == wrap == {0x81000}
+
+
 def _run():
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in fns:
