@@ -256,3 +256,30 @@ Earlier experiments combined shadow-shader warmup, eager Wasm heap growth,
 alternative worker waits and different linker settings. Their last-300
 averages ranged from 26.1 to 50.5 FPS. They did not establish an advantage
 in the crowded scene and were dropped.
+
+### Natural movie-to-battle transition
+
+With the 60 FPS option on the Radeon 780M in Edge, the story movie ended
+after 179.1 seconds at 30.0 FPS over its last 300 presents. In the first
+interval with battlefield geometry, five frames took 1,085 ms (4.6 FPS).
+The game thread averaged 97.8 ms of game code and 117.8 ms of waiting per
+frame. The render worker averaged 153.5 ms over 928 draws per frame. The
+next interval reached 15.7 FPS. The last 300 combat presents averaged
+38.9 FPS with a 34.2 ms p95. Wasm memory was 442.5 MiB at movie end and
+at the combat sample. Cumulative audio underruns rose from 14 to 366.
+The local capture is `build-web/combat-natural-play.log`.
+
+This run used Wasm SIMD in the GPU command interpreter, immutable WebGL
+texture storage, and deferred mipmap generation until a draw samples the
+mip chain. Writes to the vertex constant bank also mark it for upload,
+so draws with unchanged constants skip a 3 KiB comparison. All timings
+above include these changes.
+
+With the development server running and `playwright-core` available to
+Node, run `node twotowers/web/benchmark.cjs` from the repository root.
+Set `TT_BENCH_BROWSER` to the Edge or Chromium executable and optionally
+`TT_BENCH_URL` to the player URL (the default selects 60 FPS). The run
+lets the story finish, enters the first battle, sends attack and movement
+input, and emits JSON containing resource samples and frame intervals.
+`--skip-story` measures entry after a skip, which exercises a different
+loading schedule.

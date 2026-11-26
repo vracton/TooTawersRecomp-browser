@@ -463,6 +463,7 @@ static int vp_run(float (*in)[4], float (*out)[4])
                 if (oaddr < VP_OUTS) vp_mask_write(out[oaddr], v, o_mask);
             } else if (oaddr < VP_CONSTS) {
                 vp_mask_write(s_3d.c[oaddr], v, o_mask);
+                s_vpc_dirty = 1;
             }
         }
         if (VF(t, 3, 0, 1))
@@ -635,6 +636,7 @@ static int vp_run_fast(float (*in)[4], float (*out)[4])
                 if (I->oaddr < VP_OUTS) vp_mask_write(out[I->oaddr], v, I->o_mask);
             } else if (I->oaddr < VP_CONSTS) {
                 vp_mask_write(s_3d.c[I->oaddr], v, I->o_mask);
+                s_vpc_dirty = 1;
             }
         }
         if (I->final)

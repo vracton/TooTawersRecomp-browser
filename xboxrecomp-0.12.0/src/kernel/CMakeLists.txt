@@ -27,6 +27,9 @@ set(KERNEL_SOURCES
 )
 
 add_library(xbox_kernel STATIC ${KERNEL_SOURCES})
+if(EMSCRIPTEN)
+    set_property(SOURCE nv2a_pb_exec.c APPEND PROPERTY COMPILE_OPTIONS -msimd128)
+endif()
 
 # See src/platform/CMakeLists.txt: resolve src/ relative to this file, not via
 # CMAKE_SOURCE_DIR, which is the consuming project's root under add_subdirectory().

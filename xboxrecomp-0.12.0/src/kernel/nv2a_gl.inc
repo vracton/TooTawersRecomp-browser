@@ -530,6 +530,7 @@ static uint32_t gpu_ring(GRing *r, const void *data, uint32_t bytes, uint32_t al
 #define UB_N 5
 #ifdef __EMSCRIPTEN__
 extern void APIENTRY glBindBufferBase(GLenum target, GLuint index, GLuint buffer);
+extern void APIENTRY glTexStorage2D(GLenum target, GLsizei levels, GLenum format, GLsizei width, GLsizei height);
 #else
 #define UB_KEEP (192 * 16)
 static unsigned char g_ub_last[UB_N][UB_KEEP];
@@ -1004,7 +1005,7 @@ static void gsurf_sync_from_mem(GSurf *s)
 typedef struct {
     uint32_t off, color, w, h, pitch, ver, hash;
     GLuint tex;
-    int levels;
+    int levels, mipmaps_dirty;
     uint64_t used;
 } GTex;
 #define FHASH_MAX 512
@@ -1090,7 +1091,7 @@ static GLuint ultra_gpu_get(int idx)
     return 0;
 }
 
-static GLuint gtex_get(const Texture *t)
+static GLuint gtex_get(const Texture *t, int sample_mipmaps)
 {
     uint32_t ver = 0;
     const uint32_t *argb;
@@ -1132,8 +1133,12 @@ static GLuint gtex_get(const Texture *t)
         glBindTexture(GL_TEXTURE_2D, e->tex);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, lv - 1);
+#ifdef __EMSCRIPTEN__
+        glTexStorage2D(GL_TEXTURE_2D, lv, GL_RGBA8, (GLsizei)t->width, (GLsizei)t->height);
+#else
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)t->width, (GLsizei)t->height, 0, GL_BGRA,
                      GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
+#endif
         e->levels = lv;
         e->off = t->offset; e->color = t->color; e->w = t->width; e->h = t->height; e->pitch = t->pitch;
         e->ver = ver - 1;
@@ -1146,8 +1151,15 @@ static GLuint gtex_get(const Texture *t)
         glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, (GLsizei)t->width, (GLsizei)t->height, GL_BGRA,
                         GL_UNSIGNED_INT_8_8_8_8_REV, argb);
-        if (e->levels > 1) glGenerateMipmap(GL_TEXTURE_2D);
+        e->mipmaps_dirty = e->levels > 1;
         e->ver = ver;
+        g_sh.tex_ok = 0;
+    }
+    if (sample_mipmaps && e->mipmaps_dirty) {
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, e->tex);
+        glGenerateMipmap(GL_TEXTURE_2D);
+        e->mipmaps_dirty = 0;
         g_sh.tex_ok = 0;
     }
     e->used = ++g_clock;
@@ -2123,7 +2135,7 @@ static void gpu_bind_stages(void)
                 if (isd && tex[k] != g_tex_black) fl |= 8;
                 if (!S->normalized) { tail.sscale[k][0] = 1.0f / (float)gs->w; tail.sscale[k][1] = 1.0f / (float)gs->h; }
             } else {
-                tex[k] = gtex_get(&S->t);
+                tex[k] = gtex_get(&S->t, S->mip && S->normalized);
             }
             if (!tex[k]) fl &= ~1;
             /* (a pack picture: always through its levels) */
@@ -2358,7 +2370,6 @@ typedef struct {
 static HwVp *g_hwvp[HWVP_MAX];
 static int g_hwvp_n;
 static int g_hwvp_on = -1;
-static float g_vpc_shadow[VP_CONSTS][4];
 static int g_vpc_ok;
 static float *g_xin; static uint32_t g_xin_cap;
 static uint32_t g_hwvp_stat_hw, g_hwvp_stat_cpu, g_hwvp_compiled, g_hwvp_failed;
@@ -3220,10 +3231,10 @@ vertices_ready:
 #endif
     ib_at = gpu_ring(&g_rib, g_idx, g_nidx * 4, 4);
     if (ib_at == 0xFFFFFFFFu) return 1;
-    if (!g_vpc_ok || memcmp(g_vpc_shadow, s_3d.c, sizeof g_vpc_shadow)) {
-        memcpy(g_vpc_shadow, s_3d.c, sizeof g_vpc_shadow);
+    if (!g_vpc_ok || s_vpc_dirty) {
+        s_vpc_dirty = 0;
         g_vpc_ok = 1;
-        gpu_ub(UB_VPC, g_vpc_shadow, sizeof g_vpc_shadow);
+        gpu_ub(UB_VPC, s_3d.c, sizeof s_3d.c);
     }
     gpu_set_blend(0);
     gpu_set_depth(g_cur_ds != NULL);
