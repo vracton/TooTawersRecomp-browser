@@ -361,3 +361,19 @@ At 1,608 draws the game thread took 19.0 ms of game code and the render
 worker took 16.5 ms per frame. The final sample showed 368.75 MiB of
 Wasm memory, 19 workers and two cumulative audio underruns. See
 `build-web/combat-shared-shader-natural.json`.
+
+### Timer and guest CPU costs in the Isildur fight
+
+A four-second worker CPU profile triggered at 1,400 draws per frame
+found two workers spending most of their samples reading clocks or
+yielding. Browser performance counters now read Emscripten's monotonic
+clock directly with the same nanosecond counter frequency. The 500 Hz
+kernel timer waits on a Wasm atomic until its deadline or a GPU callback
+wakes it.
+
+In the next 60 FPS natural run the renderer process averaged 2.65 CPU
+cores over the transition and combat, down from 3.73. This run ended at
+54.1 FPS with a 34.3 ms p95. The five intervals above 1,400 draws ran
+at 42.9–55.0 FPS, and the final audio underrun count was four. The
+timer change reduced processor demand; this pair of runs did not show
+a frame-rate improvement. See `build-web/combat-clock-natural.json`.

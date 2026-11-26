@@ -19,6 +19,7 @@
 
 #include <pthread.h>
 #ifdef __EMSCRIPTEN__
+#include <emscripten/emscripten.h>
 #include <emscripten/threading.h>
 #endif
 #include <stdlib.h>
@@ -1466,11 +1467,16 @@ VOID GetLocalTime(LPSYSTEMTIME st)
 
 ULONGLONG GetTickCount64(void)
 {
+#ifdef __EMSCRIPTEN__
+    ULONGLONG milliseconds = (ULONGLONG)emscripten_get_now();
+#else
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
+    ULONGLONG milliseconds = (ULONGLONG)ts.tv_sec * 1000ULL + (ULONGLONG)ts.tv_nsec / 1000000ULL;
+#endif
     {   /* testing: RECOMP_UPTIME_MS=n -- the PC as if up n ms more (a Windows PC up 24.9 days has GetTickCount past 2^31) */
         static long long off = -1; if (off < 0) { const char *e = getenv("RECOMP_UPTIME_MS"); off = e ? atoll(e) : 0; }
-        return (ULONGLONG)ts.tv_sec * 1000ULL + (ULONGLONG)ts.tv_nsec / 1000000ULL + (ULONGLONG)off;
+        return milliseconds + (ULONGLONG)off;
     }
 }
 
@@ -1478,9 +1484,13 @@ DWORD GetTickCount(void) { return (DWORD)GetTickCount64(); }
 
 BOOL QueryPerformanceCounter(PLARGE_INTEGER count)
 {
+#ifdef __EMSCRIPTEN__
+    count->QuadPart = (LONGLONG)(emscripten_get_now() * 1000000.0);
+#else
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     count->QuadPart = (LONGLONG)ts.tv_sec * 1000000000LL + ts.tv_nsec;
+#endif
     return TRUE;
 }
 

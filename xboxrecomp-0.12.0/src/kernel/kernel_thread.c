@@ -260,6 +260,18 @@ void xbox_precise_wait_until(LONGLONG deadline)
 void xbox_hr_wait_or_wake(LONGLONG t, HANDLE wake);
 int xbox_precise_wait_until_or(LONGLONG deadline, volatile LONG *poke, HANDLE wake)
 {
+#ifdef __EMSCRIPTEN__
+    if (!emscripten_is_main_browser_thread()) {
+        LARGE_INTEGER now;
+        while (!__atomic_load_n(poke, __ATOMIC_ACQUIRE)) {
+            QueryPerformanceCounter(&now);
+            if (now.QuadPart >= deadline)
+                return 0;
+            emscripten_atomic_wait_u32((void *)poke, 0, deadline - now.QuadPart);
+        }
+        return 1;
+    }
+#endif
     static LARGE_INTEGER fq;
     static LONGLONG over = 0;
     LARGE_INTEGER now;

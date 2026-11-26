@@ -30,6 +30,9 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten/atomic.h>
+#endif
 #include "kernel.h"   /* XBOX_CONTIG_BASE / XBOX_CONTIG_SIZE */
 #include "xbox_memory_layout.h"   /* xbox_Nv2aFrameCounterFlip */
 /* The swizzle decoder the D3D8 layer already uses -- one implementation of
@@ -1874,7 +1877,12 @@ volatile LONG g_pb_cb_poke;
 void xbox_PbWakeIfPending(void)
 {
     if (g_pb_cb_wake && s_cb_head != s_cb_tail) {
-        if (!g_pb_cb_poke) { g_pb_cb_poke = 1; SetEvent(g_pb_cb_wake); }
+        if (!InterlockedExchange(&g_pb_cb_poke, 1)) {
+#ifdef __EMSCRIPTEN__
+            emscripten_atomic_notify((void *)&g_pb_cb_poke, 1);
+#endif
+            SetEvent(g_pb_cb_wake);
+        }
     }
 }
 static uint32_t s_semaphore_dma;      /* NV097_SET_CONTEXT_DMA_SEMAPHORE (0x01A4) handle */
