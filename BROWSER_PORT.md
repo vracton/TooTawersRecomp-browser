@@ -326,3 +326,38 @@ movie had 251 presents and a 610 ms longest gap. Ten intervals above
 1,400 draws ranged from 51.8 to 60.4 FPS. The last 300 presents averaged
 59.5 FPS with a 30.9 ms p95. Edge's renderer and GPU processes averaged
 2.84 and 3.31 CPU cores over the measured transition and combat.
+
+### Eliminating duplicate pixel shader compilation at the cut
+
+A Chromium GPU trace starting just before a story skip recorded 12
+overlapping ANGLE `D3DCompile` calls with byte-identical 16,309-byte
+HLSL source for the general pixel shader. Those calls took 7.89–8.96
+seconds each on background threads. As each new vertex shader appeared,
+the WebGL renderer was linking it with the general fragment shader while
+its specialized program was still being prepared.
+
+During compilation the browser now uses the already-linked general
+program and the existing CPU vertex transform. It switches to the GPU
+vertex program as soon as the specialized pair is ready. A permanently
+failed or disabled specialization still permits a general fragment shader
+paired with that GPU vertex program.
+
+Repeating the traced skip on Edge/D3D11 produced zero compiles of that
+HLSL source during the handoff. Summed wall time in all overlapping
+`D3DCompile` calls fell from 102.69 to 1.74 seconds; this is a sum over
+workers. The longest interval between present notifications during the
+first ten seconds fell from 1,304 to 125 ms, with 437 presents instead of
+129. These measurements include tracing overhead. The captures are
+`build-web/combat-handoff-profile.json`, `build-web/combat-shared-shader-profile.json`
+and the corresponding local Chromium traces.
+
+When the 179-second movie ended naturally with detailed tracing off, the
+first ten seconds went from 251 to 502 presents, and the longest gap
+fell from 610 to 303 ms. The first interval over 500 draws per frame
+rose from 12.8 to 30.8 FPS (985 draws per frame on the new run). The
+following interval reached 58.9 FPS. The last 300 combat presents
+averaged 59.9 FPS, but intervals above 1,400 draws still ran at 46–59 FPS.
+At 1,608 draws the game thread took 19.0 ms of game code and the render
+worker took 16.5 ms per frame. The final sample showed 368.75 MiB of
+Wasm memory, 19 workers and two cumulative audio underruns. See
+`build-web/combat-shared-shader-natural.json`.

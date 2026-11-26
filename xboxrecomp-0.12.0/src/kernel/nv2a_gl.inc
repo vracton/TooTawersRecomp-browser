@@ -1644,8 +1644,7 @@ static int gpu_pair_ready(GPair *e)
     return 1;
 }
 
-/* The ready program for vs + fs, or 0 (then started, if it was not). */
-static GLuint gpu_pair(GLuint vs, GLuint fs)
+static GPair *gpu_pair(GLuint vs, GLuint fs)
 {
     uint32_t h = (vs * 2654435761u) ^ (fs * 40503u), i;
     GPair *e;
@@ -1655,7 +1654,7 @@ static GLuint gpu_pair(GLuint vs, GLuint fs)
         uint32_t slot = (h + i) & 8191, ix = g_pair_hash_tab[slot];
         if (!ix) break;
         e = &g_pair[ix - 1];
-        if (e->vs == vs && e->fs == fs) return gpu_pair_ready(e) ? e->prog : 0;
+        if (e->vs == vs && e->fs == fs) return e;
     }
     if (i == 8192 || g_pair_n >= GPAIR_MAX) return 0;
     e = &g_pair[g_pair_n++];
@@ -1666,8 +1665,7 @@ static GLuint gpu_pair(GLuint vs, GLuint fs)
     glLinkProgram(e->prog);
     e->state = 0;
     g_pair_hash_tab[(h + i) & 8191] = (uint32_t)g_pair_n;
-    if (!g_parallel) return gpu_pair_ready(e) ? e->prog : 0;
-    return 0;
+    return e;
 }
 
 /* A shader object compiled (asynchronously where the driver can); state
@@ -2880,9 +2878,7 @@ static void hwps_poll(HwPs *e)
     }
 }
 
-/* The fragment shader for the program in this key: the specialized one when
- * it is compiled, else the general one. */
-static GLuint hwps_lookup(const PsKey *k)
+static HwPs *hwps_lookup(const PsKey *k)
 {
     uint32_t h, i, n;
     HwPs *e;
@@ -2892,12 +2888,10 @@ static GLuint hwps_lookup(const PsKey *k)
         g_hwps_on = !(v && v[0] == '0');
         fprintf(stderr, "  [HWPS] specialized fragment shaders: %s\n", g_hwps_on ? "on" : "off");
     }
-    if (!g_hwps_on) return g_fs_main;
+    if (!g_hwps_on) return NULL;
     if (last && !memcmp(&last->key, k, sizeof *k)) {
         hwps_poll(last);
-        if (last->state == 1) { g_hwps_stat_hw++; return last->fs; }
-        g_hwps_stat_sw++;
-        return g_fs_main;
+        return last;
     }
     h = hwps_hash(k);
     n = (uint32_t)g_hwps_n;
@@ -2906,15 +2900,12 @@ static GLuint hwps_lookup(const PsKey *k)
         if (e->hash == h && !memcmp(&e->key, k, sizeof *k)) {
             last = e;
             hwps_poll(e);
-            if (e->state == 1) { g_hwps_stat_hw++; return e->fs; }
-            g_hwps_stat_sw++;
-            return g_fs_main;
+            return e;
         }
     }
-    g_hwps_stat_sw++;
-    if (n >= HWPS_MAX) return g_fs_main;
+    if (n >= HWPS_MAX) return NULL;
     e = (HwPs *)calloc(1, sizeof *e);
-    if (!e) return g_fs_main;
+    if (!e) return NULL;
     e->key = *k; e->hash = h;
     {
         char *src = hwps_translate(k);
@@ -2925,20 +2916,31 @@ static GLuint hwps_lookup(const PsKey *k)
     g_hwps_n = (LONG)(n + 1);
     last = e;
     hwps_poll(e);
-    return e->state == 1 ? e->fs : g_fs_main;
+    return e;
 }
 
 /* The program for vs with the batch's fragment shader: the specialized one
  * when its pairing is linked, else the general one's, else 0. */
 static GLuint gpu_program_for(GLuint vs)
 {
-    GLuint fs = hwps_lookup(&g_pskey), pr = 0;
-    if (fs != g_fs_main) pr = gpu_pair(vs, fs);
-    if (!pr) {
-        if (fs != g_fs_main) { g_hwps_stat_hw--; g_hwps_stat_sw++; }
-        pr = vs == g_vs_main ? g_pr_main : gpu_pair(vs, g_fs_main);
+    HwPs *fragment = hwps_lookup(&g_pskey);
+    GPair *pair = NULL;
+    if (fragment && fragment->state == 1) {
+        pair = gpu_pair(vs, fragment->fs);
+        if (pair && gpu_pair_ready(pair)) {
+            ++g_hwps_stat_hw;
+            return pair->prog;
+        }
     }
-    return pr;
+    ++g_hwps_stat_sw;
+    if (vs == g_vs_main)
+        return g_pr_main;
+#ifdef __EMSCRIPTEN__
+    if ((fragment && fragment->state == 0) || (pair && pair->state == 0))
+        return 0;
+#endif
+    pair = gpu_pair(vs, g_fs_main);
+    return pair && gpu_pair_ready(pair) ? pair->prog : 0;
 }
 
 static void gpu_use(GLuint prog)
