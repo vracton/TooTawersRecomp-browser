@@ -218,3 +218,19 @@ cumulative audio underruns. The game's 10-second simulation sample kept
 pace with real time. These fast-start tests skipped the movies after a few
 seconds and entered battle on Normal. They complement the separate movie
 sync measurements above. See `build-web/climb-final-default-play.log`.
+
+## First-level frame pacing
+
+The browser accepts `/?fps=unlocked`. F10 also opens the display settings
+from the focused game canvas. A keyboard test launched with the 30 FPS
+default, opened F10, and selected Unlocked on the Frame rate row. A second
+launch selected Unlocked directly from the URL. Its ceiling is 1000 FPS.
+
+On a fast-start Normal run, the browser's frame-complete watchdog logged
+waits of 2.07 and 4.07 seconds around the opening battle. Browser recovery
+now checks for 32 ms with an empty render queue, no queued GPU callback,
+and no change in pushbuffer run. It rechecks under the guest dispatch lock
+before releasing the guest's frame or flush wait. In a separate run the
+frame recovery fired after 39 and 44 ms in the frontend. First-time 3D
+submission still stalled with no recovery logged. See the local
+`build-web/combat-stream-play.log` and `build-web/combat-fence-play.log`.

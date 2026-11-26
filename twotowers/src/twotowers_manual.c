@@ -1196,6 +1196,51 @@ static void tt_dtscan(void)
         }
     }
 }
+#ifdef __EMSCRIPTEN__
+static void tt_web_gpu_wait_recover(int waiting)
+{
+    extern int xbox_Nv2aDrained(void);
+    extern int xbox_PbCallbacksPending(void);
+    extern void xbox_CpuLock(void);
+    extern void xbox_CpuUnlock(void);
+    extern volatile uint32_t g_pb_runs;
+    static RECOMP_TLS unsigned long long idle_since;
+    static RECOMP_TLS uint32_t idle_run;
+    static RECOMP_TLS int last_wait;
+    if (waiting < 0 || !xbox_Nv2aDrained() || xbox_PbCallbacksPending()) {
+        idle_since = 0;
+        return;
+    }
+
+    unsigned long long now = GetTickCount64();
+    uint32_t run = g_pb_runs;
+    if (!idle_since || idle_run != run || last_wait != waiting) {
+        idle_since = now;
+        idle_run = run;
+        last_wait = waiting;
+    }
+    if (now - idle_since < 32)
+        return;
+
+    xbox_CpuLock();
+    int recovered = 0;
+    if (xbox_Nv2aDrained() && !xbox_PbCallbacksPending() && g_pb_runs == idle_run) {
+        if (waiting == 0 && MEM32(0x1BB3BCu) != 2) {
+            MEM32(0x1BB3BCu) = 2;
+            recovered = 1;
+        } else if (waiting == 1 && MEM8(0x4B7601u) != 0) {
+            MEM8(0x4B7601u) = 0;
+            recovered = 1;
+        }
+    }
+    xbox_CpuUnlock();
+    if (recovered)
+        tt_dbg("  [GPUWAIT] recovered the %s wait after %llu ms of GPU idle\n",
+               waiting == 0 ? "flush" : "frame", now - idle_since);
+    idle_since = 0;
+}
+#endif
+
 static void tt_delay_hook(void)
 {
     extern int xbox_MoviePlaying(void);
@@ -1213,7 +1258,6 @@ static void tt_delay_hook(void)
         extern int xbox_Nv2aDrained(void);
         extern int xbox_PbCallbacksPending(void);
         extern __declspec(dllimport) unsigned long long __stdcall GetTickCount64(void);
-        static unsigned long long since[2];
         static int off = -1;
         int k, w = -1;
         if (off < 0) off = getenv("TT_NO_GPUDOG") != NULL;
@@ -1230,6 +1274,10 @@ static void tt_delay_hook(void)
             extern void xbox_PerfWaitNote(int inwait);
             xbox_PerfWaitNote(inwait);
         }
+#ifdef __EMSCRIPTEN__
+        tt_web_gpu_wait_recover(w);
+#else
+        static unsigned long long since[2];
         if (w != 0) since[0] = 0;
         if (w != 1) since[1] = 0;
         if (w >= 0) {
@@ -1246,6 +1294,7 @@ static void tt_delay_hook(void)
                 since[w] = 0;
             }
         }
+#endif
     }
     {   /* the renderer's menu fill (nv2a menu_fill_zoom): a front-end screen
          * -- anything but play (screens 6 and 8) -- is drawn inside the TV
