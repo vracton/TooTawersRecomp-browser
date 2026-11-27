@@ -175,27 +175,31 @@ export async function connectSaveLibrary() {
     const message = document.querySelector("#save-message");
     const template = document.querySelector("#save-row");
 
-    function feedback(text, failed = false) {
+    function showSaveError(text) {
         message.textContent = text;
         message.hidden = !text;
-        message.classList.toggle("error", failed);
+    }
+
+    function setEmptyText(text) {
+        if (empty.textContent === text) return;
+        empty.textContent = text;
+        menuFont.then(font => { if (font) drawMenuText(empty, font); });
     }
 
     try {
         const library = await openSaveLibrary();
         let changing = false;
 
-        async function edit(operation, success) {
+        async function edit(operation) {
             if (changing) return;
             changing = true;
             upload.disabled = play.disabled = true;
-            feedback("");
+            showSaveError("");
             try {
                 await operation();
                 await refresh();
-                feedback(success);
             } catch (error) {
-                feedback(error.message || "Could not update your saves.", true);
+                showSaveError(error.message || "Could not update your saves.");
             } finally {
                 changing = false;
                 upload.disabled = play.disabled = false;
@@ -224,7 +228,7 @@ export async function connectSaveLibrary() {
                 const remove = row.querySelector(".delete-save");
                 remove.setAttribute("aria-label", `Hold to delete ${save.name}`);
                 connectHold(remove, async () => {
-                    await edit(() => library.remove(save.slot), "Save deleted.");
+                    await edit(() => library.remove(save.slot));
                     if (!remove.isConnected) upload.focus();
                 });
                 return row;
@@ -234,7 +238,7 @@ export async function connectSaveLibrary() {
             empty.hidden = !!saves.length;
             count.hidden = saves.length <= 3;
             count.textContent = `(${saves.length})`;
-            empty.textContent = "No saves";
+            setEmptyText("No saves");
         }
 
         await refresh();
@@ -243,14 +247,14 @@ export async function connectSaveLibrary() {
         input.addEventListener("change", () => {
             const files = Array.from(input.files);
             input.value = "";
-            if (files.length) edit(() => library.upload(files), "Save uploaded.");
+            if (files.length) edit(() => library.upload(files));
         });
         window.addEventListener("focus", () => {
             if (changing || document.querySelector("#launch").hidden ||
                 document.querySelector(".launcher").hidden || list.contains(document.activeElement)) return;
-            refresh().catch(() => feedback("Could not refresh your saves.", true));
+            refresh().catch(() => showSaveError("Could not refresh your saves."));
         });
     } catch {
-        empty.textContent = "Could not open your browser saves.";
+        setEmptyText("Could not open your browser saves.");
     }
 }
