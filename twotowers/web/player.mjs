@@ -245,12 +245,9 @@ play.addEventListener("click", async () => {
         if (settings.profiler) connectProfiler(readUsage);
         connectInput(game);
         canvas.focus();
-        const args = [];
+        const args = [`--fps=${settings.fps}`];
         if (query.has("profile")) {
             args.push("--profile-webgl");
-        }
-        if (settings.fps !== "30") {
-            args.push(`--fps=${settings.fps}`);
         }
         game.callMain(args);
     } catch (error) {

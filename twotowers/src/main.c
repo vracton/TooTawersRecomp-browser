@@ -1418,13 +1418,14 @@ int main(int argc, char **argv)
     setenv("RECOMP_WINDOW_SIZE", "640x480", 1);
     setenv("RECOMP_ASPECT", "1.3333", 1);
     setenv("RECOMP_RENDER_SCALE", "1", 1);
-    setenv("TT_FPS", "30", 1);
+    setenv("TT_FPS", "60", 1);
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--profile-webgl") == 0)
             setenv("RECOMP_WEB_PROFILE", "1", 1);
         else if (strncmp(argv[i], "--fps=", 6) == 0) {
             const char *fps = argv[i] + 6;
-            if (strcmp(fps, "60") == 0 || strcmp(fps, "120") == 0 || strcmp(fps, "unlocked") == 0)
+            if (strcmp(fps, "30") == 0 || strcmp(fps, "60") == 0 ||
+                strcmp(fps, "120") == 0 || strcmp(fps, "unlocked") == 0)
                 setenv("TT_FPS", fps, 1);
         }
     }

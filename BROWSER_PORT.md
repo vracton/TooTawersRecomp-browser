@@ -12,7 +12,7 @@ the original disc data, progression, movies, controls, and 4:3 framing.
 | --- | --- |
 | Build | [CMake](twotowers/CMakeLists.txt) compiles the existing generated game C and runtime with Emscripten 7.0.1, pthreads, WasmFS, and SDL2. It emits `build-web/twotowers_recomp.mjs` and `.wasm` and copies the player files into the same directory. Release links use `-O2`; other configurations use `-O1`. The SDK pin matches the C++ WasmFS interface used by the sparse partition backend. A native executable remains available for comparison. |
 | Disc | [serve.py](serve.py) validates the retail XBE hash and serves the extracted folder read-only on loopback. The default folder is the sibling `twotowers`, with `--disc` available for other locations. `/disc.json` lists lowercase relative paths, and `/disc/` serves byte ranges. [web_host.c](twotowers/src/web_host.c) mounts those files under `/game_files` with WasmFS FetchFS. The server sends the isolation headers needed for shared memory and pthreads. |
-| Launch and display | [player.mjs](twotowers/web/player.mjs) waits for **Play** before resuming Web Audio, loading the Wasm module and disc manifest, restoring the profile, and calling the game entry point. [main.c](twotowers/src/main.c) selects a 640×480 render size, 4:3 framing, render scale 1, and a 30 FPS gameplay target. [player.css](twotowers/web/player.css) fits the image inside the tab with black bars. |
+| Launch and display | [player.mjs](twotowers/web/player.mjs) waits for **Play** before resuming Web Audio, loading the Wasm module and disc manifest, restoring the profile, and calling the game entry point. [main.c](twotowers/src/main.c) selects a 640×480 render size, 4:3 framing, render scale 1, and a default 60 FPS gameplay target. [player.css](twotowers/web/player.css) fits the image inside the tab with black bars. |
 | Guest memory | [xbox_memory_layout.c](xboxrecomp-0.12.0/src/kernel/xbox_memory_layout.c) maps the guest ranges and GPU aliases into Wasm linear memory. `xbox_GuestAddress` translates guest pointers. The [C lowering pass](twotowers/web/lower_memory.py) converts generated `MEM8`, `MEM16`, and `MEM32` operations for the browser build so MMIO reaches the device handlers explicitly. APU DMA uses the contiguous physical aperture, and hand-written menu and prompt hooks also translate guest pointers. |
 | Saves and cache | [persistence.mjs](twotowers/web/persistence.mjs) restores `/profile` from IndexedDB before game startup and snapshots it every two seconds and when the tab becomes hidden. The snapshot includes the save tree, settings, and file-backed cache entries under that root. [web_partitions.cpp](twotowers/src/web_partitions.cpp) supplies separate writable sparse raw images under `/virtual_disk` for the guest cache formatter. Those raw pages are recreated on reload. Browser profiles are scoped to the host and port. |
 | Graphics | [nv2a_gl.inc](xboxrecomp-0.12.0/src/kernel/nv2a_gl.inc) drives the NV2A OpenGL renderer with [WebGL adaptations](xboxrecomp-0.12.0/src/kernel/nv2a_webgl.inc) for shaders, texture formats, drawing, and buffer uploads. The [push-buffer worker](xboxrecomp-0.12.0/src/kernel/nv2a_pb_scan.c) owns the OffscreenCanvas in the measured Edge path. A proxied WebGL mode and a software framebuffer presentation path also exist. |
@@ -104,7 +104,7 @@ to compare the same section before and after a change.
 
 ## Frame pacing work
 
-The default gameplay target remains 30 FPS. The performance target is
+The initial browser port targeted 30 FPS by default. The performance target is
 sustained 60 FPS in actual combat with the higher ceiling used to expose
 headroom. Bink movies keep their original pacing.
 
@@ -153,7 +153,7 @@ covers the startup movie.
 
 `/?fps=60` and `/?fps=120` select the corresponding existing guest pacing
 modes for testing. Either option can be combined with `profile`. With no
-query parameter, launch still targets stock 30 FPS gameplay. The movie
+query parameter, these early builds targeted stock 30 FPS gameplay. The movie
 clock uses the encoded rate in every mode.
 
 The OpenGL renderer now resolves guest vertex bases once per packed draw.
@@ -433,13 +433,43 @@ renderer's deadline wait with a single atomic sleep raised the final
 p95 from 34.4 to 46.3 ms and the transition gap to 595 ms. That trial
 was discarded. Both runs kept the simulation at real time.
 
+### Stock 30 FPS on the WebGL presentation clock
+
+The stock setting still waited for two emulated vblanks during gameplay
+after the 60 FPS change. WebGL now satisfies the vblank counter at entry
+to the guest frame wait for every setting. The original GPU completion
+wait still runs. For stock mode, the guest publishes its one- or two-vblank
+selection to the renderer, which schedules frames at 60 or 30 FPS accordingly.
+A rate change resets the presentation deadline. Bink uses its encoded
+frame clock, and software rendering still uses emulated vblanks.
+
+Two release-build Edge runs used the same 30 FPS launch setting, movie skip
+and attack inputs in the opening Isildur fight. In one-second intervals
+with at least 1,400 draws per frame, the median rose from 26.7 to 30.0 FPS.
+The ranges were 25.3–27.5 FPS across 12 intervals before the change and
+28.9–31.0 across 25 afterward. Enemy movement varies between runs.
+The final 300 presents averaged 27.47 and 30.00 FPS respectively, with p95
+frame time falling from 51.3 to 40.4 ms. The last two full simulation
+samples on the new build recorded one step per present at 100% of real time.
+Over the post-movie sample, renderer process CPU usage fell from 2.03 to
+1.78 cores and GPU process CPU usage from 0.55 to 0.46 cores. Both runs
+used 368.75 MiB of Wasm memory. The audio underrun counter ended at zero
+before the change and one afterward.
+
+A separate comparison switched from 30 to Unlocked to 60 and back to 30
+with F10 during one fight. Excluding level entry and the switches, the
+one-second intervals at 30 ranged from 29.7 to 30.3 FPS. The median was
+65.4 FPS unlocked and 60.0 FPS at the 60 cap. Level entry still had a
+13.8 FPS interval. That run ended with six audio underruns.
+
 ### Launcher settings and save library
 
 The launcher uses the original Options background and gold selection ring
 from `UI/options.BFF` and bitmap glyphs from `UI/startup.BFF`. The local server decodes these
 from the user's disc in memory. The launcher
 remembers the 30, 60, or Unlocked setting and the profiler switch in
-origin-local storage. The profiler defaults to off. The title uses a
+origin-local storage. First launch defaults to 60 FPS with the profiler off.
+An explicit FPS in the URL takes precedence over the saved choice. The title uses a
 smoothed enlargement of the same bitmap glyphs. The selection ring keeps
 the same dimensions at every stop. It sits behind the full Unlocked
 label, and the profiler uses the same marker for On and Off.

@@ -1112,14 +1112,26 @@ void sub_0011DA80(void)
  * has counted 2 vblanks (30 fps) or 1 (60 fps), chosen by the flag at
  * 0x4B75F1 that it sets itself (0 = 60 in menus and some sequences, 1 = 30 in
  * gameplay). The hook below runs at every guest sleep:
- *   60       uses one vblank on desktop and the presentation clock on the web;
+ *   60       uses one vblank;
  *   unlocked fills the vblank counter, so the wait ends at once.
+ * WebGL handles these rates at presentation instead.
  * EXPERIMENTAL: if the game advances its simulation by a fixed step per
  * frame, gameplay runs faster than normal in these modes. */
 static int tt_fps_mode = -1;   /* 0 = 30 (stock), 1 = 60, 2 = unlocked (up to tt_fps_cap, or 1000), 3 = unlocked up to the monitor's refresh rate */
 static int tt_fps_cap;          /* (1.9.3) frames a second for mode 2: 75 .. 300 from the list; 0 = unlocked */
 /* the settings list (gfx_menu.c): 30, 60, 75, 90, 100, 120, 144, 165, 200, 240, 300, unlocked */
 static const int tt_fps_list[12] = { 30, 60, 75, 90, 100, 120, 144, 165, 200, 240, 300, 0 };
+
+static int tt_uses_present_clock(void)
+{
+#ifdef __EMSCRIPTEN__
+    extern int xbox_WebGpuOwnsFramebuffer(void);
+    return xbox_WebGpuOwnsFramebuffer();
+#else
+    return 0;
+#endif
+}
+
 volatile unsigned long long tt_hud_drawn_ms;   /* the HUD last drawn (0x000CF450) */
 /* an in-engine scene: play's screen, no film, and no HUD drawn lately */
 int tt_in_scene(void)
@@ -1307,18 +1319,12 @@ static void tt_delay_hook(void)
         xbox_frontend_hint = scr != 6 && scr != 8;
         if (scr != last) { last = scr; tt_dbg("  [FILL] front-end screen %u%s\n", scr, xbox_frontend_hint ? " (menu: fills the screen)" : " (play)"); if (scr == 6) { extern volatile int xbox_contig_testfill_now; xbox_contig_testfill_now = 1; } }
     }
-    if (!tt_fps_mode) return;
+    if (!tt_fps_mode || tt_uses_present_clock()) return;
     /* Movies pace themselves through the same wait (two vblanks a frame),
      * so they are left at stock speed. */
     if (xbox_MoviePlaying()) { if (tt_fps_mode == 1) MEM8(0x4B75F1u) = 1; return; }
-    int guest_mode = tt_fps_mode;
-#ifdef __EMSCRIPTEN__
-    extern int xbox_WebGpuOwnsFramebuffer(void);
-    if (guest_mode == 1 && xbox_WebGpuOwnsFramebuffer())
-        guest_mode = 2;
-#endif
-    if (guest_mode == 1) MEM8(0x4B75F1u) = 0;
-    else if (guest_mode >= 2) {
+    if (tt_fps_mode == 1) MEM8(0x4B75F1u) = 0;
+    else if (tt_fps_mode >= 2) {
         /* (unlocked: 1.8.1 -- unlocked throughout again; choose 60 before the scenes instead) */
         /* (1.9.3) A frame no sooner than one period after the last: the
          * frame wait is ended (the vblank counter filled) once a period,
@@ -1332,7 +1338,7 @@ static void tt_delay_hook(void)
         if (cap < 0) { const char *c = getenv("TT_FPS_CAP"); cap = c ? atoi(c) : 0; QueryPerformanceFrequency(&fq); }
         /* (1.9.3) unlocked: up to 1000 frames a second -- a frame under a
          * millisecond is one the game's world does not move in */
-        hz = cap > 0 ? cap : guest_mode == 3 ? xbox_DisplayRefreshHz() : tt_fps_cap > 0 ? tt_fps_cap : 1000;
+        hz = cap > 0 ? cap : tt_fps_mode == 3 ? xbox_DisplayRefreshHz() : tt_fps_cap > 0 ? tt_fps_cap : 1000;
         if (hz < 30) hz = 1000;   /* (rate unknown) */
         /* (1.9.8) the front end (the intros, the title, the menus: any screen but play, 6) at most 240 frames a second: at
          * 700-1000 (unlocked, a fast PC) its timers, kept in whole milliseconds, hardly moved -- Start and Enter at the main
@@ -1397,7 +1403,12 @@ static void tt_pb_callback_hook(uint32_t fn, uint32_t ctx)
 static void tt_fps_present_cap(void)
 {
     extern volatile int xbox_frame_cap_hz;
-    xbox_frame_cap_hz = tt_fps_mode >= 2 ? (tt_fps_cap > 0 ? tt_fps_cap : 1000) : 60;
+    int hz = tt_fps_mode >= 2 ? (tt_fps_cap > 0 ? tt_fps_cap : 1000) : 60;
+#ifdef __EMSCRIPTEN__
+    __atomic_store_n(&xbox_frame_cap_hz, tt_fps_mode == 0 ? 30 : hz, __ATOMIC_RELAXED);
+#else
+    xbox_frame_cap_hz = hz;
+#endif
 }
 static void tt_fps_set(int idx)
 {
@@ -1408,7 +1419,8 @@ static void tt_fps_set(int idx)
     tt_fps_cap = idx >= 2 ? tt_fps_list[idx] : 0;
     tt_fps_mode = mode;
     tt_fps_present_cap();
-    if (old == 1 && mode != 1) MEM8(0x4B75F1u) = 1;
+    if (old == 1 && mode != 1 && !tt_uses_present_clock())
+        MEM8(0x4B75F1u) = 1;
     if (mode == 2 && tt_fps_cap) tt_dbg("  [FPS] frame-rate mode now up to %d fps\n", tt_fps_cap);
     else tt_dbg("  [FPS] frame-rate mode now %s\n", mode == 1 ? "60" : mode == 2 ? "unlocked" : "30");
 }
@@ -2504,7 +2516,14 @@ void sub_000E00E0(void)
     uint32_t sa = eax, sb = ebx, sc = ecx, sd = edx, ss = esi, sdi = edi, sp = esp;
     tt_menus_tick();
 #ifdef __EMSCRIPTEN__
-    if (MEM32(sp) == 0x000E8DC8u && sdi >= 0x10000u && xbox_MoviePlaying())
+    int movie = xbox_MoviePlaying();
+    if (tt_uses_present_clock()) {
+        extern int xbox_web_stock_frame_hz;
+        int hz = !movie && MEM8(0x4B75F1u) ? 30 : 60;
+        __atomic_store_n(&xbox_web_stock_frame_hz, hz, __ATOMIC_RELAXED);
+        if (!movie) MEM32(0x4B7618u) = 2;
+    }
+    if (movie && MEM32(sp) == 0x000E8DC8u && sdi >= 0x10000u)
         web_movie_wait(sdi);
 #endif
     eax = sa; ebx = sb; ecx = sc; edx = sd; esi = ss; edi = sdi; esp = sp;

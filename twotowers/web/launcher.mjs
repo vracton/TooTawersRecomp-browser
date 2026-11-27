@@ -92,7 +92,7 @@ export function connectLaunchSettings(query) {
     const explicit = frameRates.indexOf(requested);
     const initial = explicit >= 0 ? explicit : frameRates.indexOf(stored.fps);
     let override = requested === "120";
-    slider.value = Math.max(0, initial);
+    slider.value = initial >= 0 ? initial : slider.defaultValue;
     profiler.checked = stored.profiler === true;
 
     function showFrameRate() {

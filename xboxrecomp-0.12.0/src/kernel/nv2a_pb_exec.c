@@ -2143,16 +2143,29 @@ static int blit_method(uint32_t subch, uint32_t method, uint32_t param)
  * no frame goes out sooner than the limit's period after the last, in
  * menus and play alike; the title sets the rate (0: no limit). */
 volatile int xbox_frame_cap_hz;
+#ifdef __EMSCRIPTEN__
+int xbox_web_stock_frame_hz = 60;
+#endif
 static void frame_limit(void)
 {
     extern void xbox_precise_wait_until(LONGLONG deadline);
     static LARGE_INTEGER f; static LONGLONG next;
     LARGE_INTEGER n;
     LONGLONG period;
+#ifdef __EMSCRIPTEN__
+    int hz = __atomic_load_n(&xbox_frame_cap_hz, __ATOMIC_RELAXED);
+    if (hz == 30) hz = __atomic_load_n(&xbox_web_stock_frame_hz, __ATOMIC_RELAXED);
+#else
     int hz = xbox_frame_cap_hz;
+#endif
     static int force = -1;   /* testing: RECOMP_FRAME_CAP=<n> */
     if (force < 0) { const char *e = getenv("RECOMP_FRAME_CAP"); force = e ? atoi(e) : 0; }
     if (force > 0) hz = force;
+    static int previous_hz;
+    if (hz != previous_hz) {
+        next = 0;
+        previous_hz = hz;
+    }
     if (hz <= 0) { next = 0; return; }
     if (!f.QuadPart) QueryPerformanceFrequency(&f);
     period = f.QuadPart / hz;
